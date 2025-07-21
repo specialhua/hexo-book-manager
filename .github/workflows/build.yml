@@ -50,6 +50,9 @@ jobs:
       env:
         # 为 electron-builder 提供 GitHub token（用于发布）
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # 确保发布到 GitHub Releases
+        EP_DRAFT: false
+        EP_PRE_RELEASE: false
     
     - name: List build outputs (Windows)
       if: matrix.os == 'windows-latest'
