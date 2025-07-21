@@ -4,6 +4,8 @@
 
 预览：[Incodes blog](https://inkcodes.com/books/)
 使用本工具可以很方便地管理书籍、包括添加、删除、排序等，目前仅支持七牛云图床上传书籍封面，主要实现依赖：[PicGo-Core](https://github.com/PicGo/PicGo-Core)、[ISBN API](https://market.isbn.work/#/home)，
+<img width="1279" height="1547" alt="图片" src="https://github.com/user-attachments/assets/abcb5d2e-83b1-429a-b657-425ddd288f0a" />
+
 ## 功能特性
 
 ### 🚀 功能
