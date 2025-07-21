@@ -49,6 +49,11 @@
       "dist/**/*",
       "dist-electron/**/*"
     ],
+    "publish": {
+      "provider": "github",
+      "owner": "specialhua",
+      "repo": "hexo-book-manager"
+    },
     "mac": {
       "category": "public.app-category.productivity"
     },

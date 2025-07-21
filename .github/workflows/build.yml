@@ -38,6 +38,11 @@ jobs:
     
     - name: Build desktop application
       run: npm run build
+      env:
+        # 为 electron-builder 提供 GitHub token（用于发布）
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # 根据是否为 tag 推送决定是否发布
+        PUBLISH: ${{ startsWith(github.ref, 'refs/tags/v') && 'always' || 'never' }}
     
     - name: List build outputs (Windows)
       if: matrix.os == 'windows-latest'
@@ -62,9 +67,9 @@ jobs:
           release/
         retention-days: 30
     
-    # Release only when pushing tags
-    - name: Create Release
-      if: startsWith(github.ref, 'refs/tags/v')
+    # Backup release method (if electron-builder fails)
+    - name: Create Release (Backup)
+      if: startsWith(github.ref, 'refs/tags/v') && failure()
       uses: softprops/action-gh-release@v1
       with:
         files: release/*
