@@ -99,12 +99,12 @@ export async function getBookByISBN(isbn: string, apiConfig: IsbnApiConfig): Pro
     }
     
   } catch (error) {
-    if (error.name === 'AbortError') {
+    if (error instanceof Error && error.name === 'AbortError') {
       console.error('ISBN查询超时')
       throw new Error('查询超时，请重试')
     }
     console.error('获取书籍信息失败:', error)
-    throw new Error(`获取书籍信息失败: ${error.message}`)
+    throw new Error(`获取书籍信息失败: ${error instanceof Error ? error.message : String(error)}`)
   }
 }
 

@@ -80,7 +80,6 @@ export const darkThemeOverrides: GlobalThemeOverrides = {
     modalColor: '#2c313c',
     
     borderColor: '#434b56',
-    tableBorderColor: '#434b56',
     hoverColor: 'rgba(97, 175, 239, 0.1)',
     
     // One Dark 文本颜色

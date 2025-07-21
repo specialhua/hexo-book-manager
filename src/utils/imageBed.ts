@@ -13,7 +13,7 @@ const isElectron = () => {
     availableMethods: hasWindow && window.electronAPI ? Object.keys(window.electronAPI) : [],
     methodDetails: hasWindow && window.electronAPI ? Object.keys(window.electronAPI).map(key => ({
       name: key,
-      type: typeof window.electronAPI[key]
+      type: typeof (window.electronAPI as any)[key]
     })) : [],
     downloadImageExists: hasWindow && window.electronAPI && 'downloadImage' in window.electronAPI,
     hasDownloadImage: hasWindow && window.electronAPI ? typeof window.electronAPI.downloadImage === 'function' : false,
@@ -261,29 +261,33 @@ async function uploadToQiniuElectron(
     })
     
     // 通过Electron API上传
-    const result = await window.electronAPI.uploadImage(fileData, plainConfig)
+    const result = await window.electronAPI.uploadImage({ 
+      name: fileData.name, 
+      path: fileData.path || '', 
+      base64: fileData.base64 
+    }, plainConfig)
     
     console.log('Electron API uploadImage 返回结果:', result)
     
-    if (result.success && result.url) {
-      errorLogger.info('imageBed', 'PicGo-Core上传成功', { url: result.url, key: result.key })
+    if (result.success && result.data?.url) {
+      errorLogger.info('imageBed', 'PicGo-Core上传成功', { url: result.data.url, key: result.data?.key })
       
       return {
         success: true,
-        url: result.url,
+        url: result.data.url,
         message: '上传成功'
       }
     } else {
       console.error('Electron API 返回失败:', {
         success: result.success,
         error: result.error,
-        url: result.url,
+        url: result.data?.url || '',
         fullResult: result
       })
       throw new Error(result.error || '上传失败')
     }
   } catch (error) {
-    errorLogger.error('imageBed', 'PicGo-Core上传异常', error, {
+    errorLogger.error('imageBed', 'PicGo-Core上传异常', error instanceof Error ? error : new Error(String(error)), {
       config: {
         bucket: config.qiniu_bucket,
         region: config.qiniu_region
@@ -292,8 +296,9 @@ async function uploadToQiniuElectron(
     
     return {
       success: false,
-      error: error.message || '上传失败',
-      message: `七牛云上传失败: ${error.message}`
+      url: '',
+      error: error instanceof Error ? error.message : String(error),
+      message: `七牛云上传失败: ${error instanceof Error ? error.message : String(error)}`
     }
   }
 }
@@ -314,7 +319,7 @@ export const downloadAndUploadImage = withErrorLogging('imageBed', async functio
   })
   
   try {
-    let fileBlob: File | string | { data: string, fileName: string }
+    let fileBlob: File | string
     
     if (isElectron() && window.electronAPI && typeof window.electronAPI.downloadImage === 'function') {
       // 在Electron环境中使用主进程下载
@@ -336,8 +341,8 @@ export const downloadAndUploadImage = withErrorLogging('imageBed', async functio
       
       console.log('准备上传下载的图片，base64长度:', base64Data.length)
       
-      // 直接传递base64字符串而不是File对象，并传递文件名
-      fileBlob = { data: base64Data, fileName: fileName }
+      // 直接使用base64字符串
+      fileBlob = base64Data
       
     } else {
       // 在浏览器环境中直接使用fetch下载
@@ -367,7 +372,7 @@ export const downloadAndUploadImage = withErrorLogging('imageBed', async functio
       } catch (fetchError) {
         errorLogger.warning('imageBed', '浏览器直接下载失败，返回原始URL', { 
           imageUrl,
-          error: fetchError.message 
+          error: fetchError instanceof Error ? fetchError.message : String(fetchError)
         })
         
         return {
@@ -391,7 +396,7 @@ export const downloadAndUploadImage = withErrorLogging('imageBed', async functio
       fallback: false
     }
   } catch (error) {
-    errorLogger.error('imageBed', '下载并上传图片失败', error as Error, {
+    errorLogger.error('imageBed', '下载并上传图片失败', error instanceof Error ? error : new Error(String(error)), {
       imageUrl,
       configType: config.type
     })
@@ -399,7 +404,7 @@ export const downloadAndUploadImage = withErrorLogging('imageBed', async functio
     // 失败时返回原始URL作为降级方案
     errorLogger.warning('imageBed', '上传失败，使用原始图片URL作为降级方案', { 
       imageUrl,
-      error: error.message 
+      error: error instanceof Error ? error.message : String(error)
     })
     
     return {
@@ -407,7 +412,7 @@ export const downloadAndUploadImage = withErrorLogging('imageBed', async functio
       success: true,  // 返回结果成功（有URL可用）
       uploadSuccess: false,  // 但上传失败
       fallback: true,  // 使用了降级方案
-      error: error.message
+      error: error instanceof Error ? error.message : String(error)
     }
   }
 })

@@ -7,7 +7,7 @@ console.log('=== DOWNLOADIMAGE SHOULD BE AVAILABLE ===')
 // 定义API接口
 export interface ElectronAPI {
   // 图片上传相关
-  uploadImage: (file: { name: string, path: string, data: Buffer }, config: any) => Promise<{ success: boolean, data?: any, error?: string }>
+  uploadImage: (file: { name: string, path?: string, base64: string }, config: any) => Promise<{ success: boolean, data?: any, error?: string }>
   testQiniuConfig: (config: any) => Promise<{ success: boolean, data?: any, error?: string }>
   downloadImage: (imageUrl: string) => Promise<{ success: boolean, data?: any, error?: string }>
   
@@ -34,7 +34,7 @@ export interface ElectronAPI {
 
 // 暴露API到渲染进程
 const electronAPI = {
-  uploadImage: (file: { name: string, path: string, data: Buffer }, config: any) => {
+  uploadImage: (file: { name: string, path?: string, base64: string }, config: any) => {
     return ipcRenderer.invoke('upload-image', file, config)
   },
   

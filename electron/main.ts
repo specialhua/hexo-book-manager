@@ -111,7 +111,22 @@ ipcMain.handle('upload-image', async (event, file: { name: string, base64: strin
     const result = await picGoService.uploadToQiniu(config, fileData)
     
     console.log('七牛云上传结果:', result)
-    return result
+    
+    // 包装返回结果以符合前端期望的数据结构
+    if (result.success) {
+      return {
+        success: true,
+        data: {
+          url: result.url,
+          key: result.key
+        }
+      }
+    } else {
+      return {
+        success: false,
+        error: result.error
+      }
+    }
   } catch (error) {
     console.error('Upload failed:', error)
     return { success: false, error: (error as Error).message }

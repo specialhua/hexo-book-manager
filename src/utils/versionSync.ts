@@ -526,7 +526,7 @@ export class VersionSyncManager {
       try {
         blogContent = await this.readBlogFile(config.blogPath)
       } catch (error) {
-        throw new Error(`无法读取博客文件: ${error.message}`)
+        throw new Error(`无法读取博客文件: ${error instanceof Error ? error.message : String(error)}`)
       }
       
       if (!blogContent || blogContent.trim().length === 0) {
@@ -538,7 +538,7 @@ export class VersionSyncManager {
       try {
         blogParseResult = parseExistingBooks(blogContent, cacheBooks)
       } catch (error) {
-        throw new Error(`博客文件解析失败: ${error.message}`)
+        throw new Error(`博客文件解析失败: ${error instanceof Error ? error.message : String(error)}`)
       }
       
       const blogBooks = blogParseResult.books || []
@@ -551,7 +551,7 @@ export class VersionSyncManager {
       }
       
       // 首先进行版本标识比较
-      const blogBooksSorted = blogBooks.map((book, index) => ({
+      const blogBooksSorted = blogBooks.map((book: any, index: number) => ({
         ...book,
         sort_order: index
       }))
@@ -690,7 +690,7 @@ export class VersionSyncManager {
       
       // 解析博客文件
       const currentBooks = storage.load<Book[]>('books', [])
-      const parseResult = parseExistingBooks(blogContent, currentBooks)
+      const parseResult = parseExistingBooks(blogContent, currentBooks || [])
       
       if (!parseResult.books || parseResult.books.length === 0) {
         // 验证文件是否包含书籍信息
@@ -711,7 +711,7 @@ export class VersionSyncManager {
       
       // 创建备份（保存当前缓存）
       const existingBooks = storage.load<Book[]>('books', [])
-      if (existingBooks.length > 0) {
+      if (existingBooks && existingBooks.length > 0) {
         const backupKey = `books_backup_${Date.now()}`
         storage.save(backupKey, existingBooks)
       }
@@ -797,7 +797,7 @@ export class VersionSyncManager {
               console.warn('📤 备份权限不足，请检查文件夹权限')
             }
           } else {
-            console.log('📤 备份创建成功:', backupResult.backupPath)
+            console.log('📤 备份创建成功:', backupResult.data?.backupPath || '未知路径')
           }
         } catch (backupError) {
           console.error('📤 备份创建过程出错:', backupError)
@@ -1080,16 +1080,16 @@ export class VersionSyncManager {
     const backupKeys = storage.getAllKeys().filter(key => key.startsWith('books_backup_'))
     
     // 如果没有当前数据但有备份数据，可能发生了数据丢失
-    if (currentBooks.length === 0 && backupKeys.length > 0) {
+    if ((currentBooks?.length || 0) === 0 && backupKeys.length > 0) {
       // 找到最新的备份
       const latestBackupKey = backupKeys.sort().pop()
       if (latestBackupKey) {
         const backupBooks = storage.load<Book[]>(latestBackupKey, [])
-        if (backupBooks.length > 0) {
+        if (backupBooks && backupBooks.length > 0) {
           return {
             hasDataLoss: true,
             recoveryOptions: ['restore_from_backup', 'ignore'],
-            backupBooks
+            backupBooks: backupBooks || []
           }
         }
       }
@@ -1118,12 +1118,12 @@ export class VersionSyncManager {
       }
       
       const backupBooks = storage.load<Book[]>(latestBackupKey, [])
-      if (backupBooks.length === 0) {
+      if (!backupBooks || backupBooks.length === 0) {
         return false
       }
       
       // 恢复数据
-      const success = storage.forceSave('books', backupBooks)
+      const success = storage.save('books', backupBooks)
       if (success) {
         return true
       }
