@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "vite",
     "dev:electron": "vite --mode electron",
-    "build": "vite build --mode electron && electron-builder",
+    "build": "vite build --mode electron && electron-builder --publish always",
     "build:dir": "vite build && electron-builder --dir",
     "build:electron": "tsc -p electron && node scripts/build-cjs.cjs && vite build --mode electron",
     "type-check": "tsc --noEmit --skipLibCheck",
