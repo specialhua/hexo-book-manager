@@ -1,7 +1,7 @@
 {
   "name": "hexo-book-manager",
   "private": true,
-  "version": "1.0.5",
+  "version": "1.0.1",
   "description": "书籍管理工具 - 为 Hexo 博客生成书单页面",
   "author": "Specialhua <inkcodes.com>",
   "type": "module",
