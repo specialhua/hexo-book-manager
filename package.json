@@ -53,7 +53,9 @@
       {
         "provider": "github",
         "owner": "specialhua",
-        "repo": "hexo-book-manager"
+        "repo": "hexo-book-manager",
+        "draft": false,
+        "prerelease": false
       }
     ],
     "mac": {
