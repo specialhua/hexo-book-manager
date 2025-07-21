@@ -8,6 +8,10 @@ on:
         required: true
         type: string
 
+permissions:
+  contents: write
+  packages: write
+
 jobs:
   create-release:
     runs-on: ubuntu-latest
@@ -46,3 +50,63 @@ jobs:
       run: |
         git tag ${{ github.event.inputs.version }}
         git push origin ${{ github.event.inputs.version }}
+
+  build:
+    needs: create-release
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+        node-version: [18.x]
+    
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+    - name: Checkout repository (with new tag)
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.inputs.version }}
+    
+    - name: Setup Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Run type check
+      run: npm run type-check
+    
+    - name: Build Electron application
+      run: npm run build:electron
+    
+    - name: Build and publish desktop application
+      run: npm run build
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        EP_DRAFT: false
+        EP_PRE_RELEASE: false
+    
+    - name: List build outputs (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        echo "Build completed successfully!"
+        echo "Contents of release directory:"
+        dir release
+      shell: cmd
+    
+    - name: List build outputs (Unix)
+      if: matrix.os != 'windows-latest'
+      run: |
+        echo "Build completed successfully!"
+        echo "Contents of release directory:"
+        ls -la release/
+    
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.os }}-build-${{ github.event.inputs.version }}
+        path: |
+          release/
+        retention-days: 30
