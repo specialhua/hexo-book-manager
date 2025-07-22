@@ -31,9 +31,17 @@ jobs:
       run: |
         VERSION="${{ github.event.inputs.version }}"
         VERSION_NUMBER="${VERSION#v}"
-        npm version $VERSION_NUMBER --no-git-tag-version
+        CURRENT_VERSION=$(node -p "require('./package.json').version")
+        if [ "$CURRENT_VERSION" != "$VERSION_NUMBER" ]; then
+          npm version $VERSION_NUMBER --no-git-tag-version
+          echo "VERSION_CHANGED=true" >> $GITHUB_ENV
+        else
+          echo "Version $VERSION_NUMBER already set in package.json"
+          echo "VERSION_CHANGED=false" >> $GITHUB_ENV
+        fi
     
     - name: Commit version bump
+      if: env.VERSION_CHANGED == 'true'
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
@@ -41,6 +49,7 @@ jobs:
         git commit -m "Bump version to ${{ github.event.inputs.version }}"
     
     - name: Push changes
+      if: env.VERSION_CHANGED == 'true'
       uses: ad-m/github-push-action@master
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
