@@ -4,6 +4,14 @@
       <n-space align="center" justify="space-between">
         <n-h2 style="margin: 0;">书籍管理工具</n-h2>
         <n-space>
+          <n-button @click="showThemeResource = true" quaternary>
+            <template #icon>
+              <n-icon>
+                <FileIcon />
+              </n-icon>
+            </template>
+            另存CSS和JS
+          </n-button>
           <n-button @click="showSettings = true" quaternary>
             <template #icon>
               <n-icon>
@@ -40,6 +48,11 @@
     @update-isbn-api-config="updateIsbnApiConfig"
     @update-settings="handleSettingsUpdate"
   />
+  
+  <!-- 主题资源界面 -->
+  <ThemeResourceModal 
+    v-model:show="showThemeResource"
+  />
 </template>
 
 <script setup lang="ts">
@@ -47,7 +60,8 @@ import { ref } from 'vue'
 import { type GlobalTheme, useMessage } from 'naive-ui'
 import BookManager from './BookManager.vue'
 import AppSettings from './AppSettings.vue'
-import { SunIcon, MoonIcon, SettingsIcon } from './Icons'
+import ThemeResourceModal from './ThemeResourceModal.vue'
+import { SunIcon, MoonIcon, SettingsIcon, FileIcon } from './Icons'
 import { type ImageBedConfig } from '../utils/imageBed'
 import { type IsbnApiConfig } from '../types'
 
@@ -83,6 +97,7 @@ const emit = defineEmits<{
 
 const message = useMessage()
 const showSettings = ref(false)
+const showThemeResource = ref(false)
 
 // 更新图床配置
 const updateImageBedConfig = (config: ImageBedConfig) => {

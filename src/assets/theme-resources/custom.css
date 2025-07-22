@@ -1,0 +1,698 @@
+/* Snake */
+.snake-dark {
+    display: none;
+}
+.snake-light {
+    display: block;
+}
+
+/* 夜间模式：确保背景透明，显示 dark 图像 */
+[data-user-color-scheme='dark'] #snake-pic {
+    background-color: transparent; /* 确保背景透明 */
+}
+
+[data-user-color-scheme='dark'] .snake-light {
+    display: none; /* 隐藏 light 版本 */
+}
+
+[data-user-color-scheme='dark'] .snake-dark {
+    display: block; /* 显示 dark 版本 */
+}
+
+/* 确保图片本身背景透明 */
+#snake-pic img {
+background-color: transparent;
+}
+
+/* 导航栏 logo 样式 */
+.navbar {
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+    height: auto;  /* 允许导航栏高度自适应 */
+}
+
+/* Logo 容器 */
+.navbar-brand {
+    display: flex;
+    align-items: center;
+    padding: 0;
+    margin-right: 2rem;  /* 与右侧菜单保持一定距离 */
+    min-height: 45px; /* 预留logo高度，防止抖动 */
+}
+
+/* Logo 图片 */
+.navbar-brand .navbar-logo {
+    height: 45px;  /* 增加高度 */
+    width: auto;   /* 保持宽高比 */
+    vertical-align: middle;
+    transition: transform 0.3s ease;
+    object-fit: contain;  /* 确保图片不变形 */
+    max-width: 200px;    /* 限制最大宽度 */
+    backface-visibility: hidden; /* 防止闪烁 */
+    transform: translateZ(0); /* 开启硬件加速 */
+    -webkit-transform: translateZ(0);
+    will-change: transform; /* 提示浏览器这个元素会变化 */
+    /* 添加缓存控制 */
+    cache-control: max-age=31536000; /* 让浏览器缓存这个图片 */
+}
+
+/* 添加logo加载动画 */
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.navbar-brand .navbar-logo:hover {
+    transform: scale(1.05);
+}
+
+/* 响应式设计 */
+@media (max-width: 991.98px) {
+    .navbar-brand .navbar-logo {
+        height: 40px;  /* 中等屏幕稍微小一点 */
+    }
+}
+
+@media (max-width: 767.98px) {
+    .navbar-brand .navbar-logo {
+        height: 35px;  /* 小屏幕再小一点 */
+        max-width: 150px;  /* 限制小屏幕下的最大宽度 */
+    }
+
+    .navbar {
+        padding-top: 0.3rem;
+        padding-bottom: 0.3rem;
+    }
+}
+
+/* 优化导航栏其他元素的位置 */
+.navbar .navbar-nav {
+    align-items: center;  /* 垂直居中对齐 */
+}
+
+.navbar-logo {
+    animation: fadeIn 0.2s ease-in;
+    /* 缓存图片到内存 */
+    -webkit-transform: translate3d(0, 0, 0);
+    transform: translate3d(0, 0, 0);
+}
+
+/* 书籍列表容器样式 */
+#book {
+width: 100%;
+}
+
+#book .page {
+overflow: hidden;
+border-radius: 3px;
+width: 100%;
+}
+
+#book .content {
+display: flex;
+align-items: center;
+width: 100%;
+margin: 0;
+justify-content: space-between;
+flex-wrap: wrap;
+padding: 16px;
+text-align: justify;
+}
+
+/* 响应式布局 */
+@media screen and (max-width: 877px) {
+    #book .page .content {
+    flex-direction: column;
+    align-items: center;
+    }
+}
+
+/* 将以下内容添加到 source/css/custom.css */
+
+/* 书籍列表容器样式 */
+#book {
+width: 100%;
+}
+
+#book .page {
+overflow: hidden;
+border-radius: 3px;
+width: 100%;
+}
+
+#book .content {
+display: flex;
+align-items: center;
+width: 100%;
+margin: 0;
+justify-content: space-between;
+flex-wrap: wrap;
+padding: 16px;
+text-align: justify;
+}
+
+/* 响应式布局 */
+@media screen and (max-width: 877px) {
+    #book .page .content {
+    flex-direction: column;
+    align-items: center;
+    }
+}
+
+/* 书籍卡片样式 */
+#book .content li {
+width: 380px;
+list-style: none;
+margin-bottom: 16px;
+border-radius: 8px;
+transition: all .3s ease 0s, transform .6s cubic-bezier(.6, .2, .1, 1) 0s;
+}
+
+#book .content li .info {
+border-radius: 8px;
+display: flex;
+justify-content: flex-start;
+padding: 16px 12px;
+line-height: 1.7;
+list-style: none;
+}
+
+/* 书籍封面3D效果 */
+.book-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    perspective: 600px;
+}
+
+.book {
+    position: relative;
+    width: 100px;
+    height: 150px;
+    transform-style: preserve-3d;
+    transform: rotateY(-30deg);
+    transition: 1s ease;
+    list-style: none;
+}
+
+.book:before {
+    content: " ";
+    position: absolute;
+    left: 0;
+    top: 2px;
+    width: 23px;
+    height: 146px;
+    transform: translateX(84.5px) rotateY(90deg);
+    background: linear-gradient(90deg, #fff, #f9f9f9 5%, #fff 10%, #f9f9f9 15%, #fff 20%, #f9f9f9 25%, #fff 30%, #f9f9f9 35%, #fff 40%, #f9f9f9 45%, #fff 50%, #f9f9f9 55%, #fff 60%, #f9f9f9 65%, #fff 70%, #f9f9f9 75%, #fff 80%, #f9f9f9 85%, #fff 90%, #f9f9f9 95%, #fff);
+}
+
+.book > :first-child {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100px;
+    height: 150px;
+    transform: translateZ(12.5px);
+    border-radius: 0 2px 2px 0;
+    box-shadow: 5px 5px 20px #666;
+}
+
+.book:after {
+    content: " ";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100px;
+    height: 150px;
+    transform: translateZ(-12.5px);
+    background-color: #555;
+    border-radius: 0 2px 2px 0;
+}
+
+/* 书籍信息卡片样式 */
+#book .content li .info > div {
+margin-left: 26px;
+}
+
+#book .content li .info h3 {
+font-size: 16px;
+position: unset;
+background: none;
+display: block;
+text-overflow: ellipsis;
+overflow: hidden;
+white-space: nowrap;
+}
+
+#book .content li .info h3:before {
+display: none;
+}
+
+#book .content li .info p {
+font-size: 14px;
+line-height: 1.7;
+}
+
+/* 悬浮效果 */
+#book .content li:hover .book {
+transform: rotateY(0deg);
+}
+
+/* 书籍简介弹出层 */
+#book .info .info-card {
+position: relative;
+width: 250px;
+overflow: hidden;
+transition: .3s;
+}
+
+#book .info .info-card .hidden-content {
+position: absolute;
+display: flex;
+justify-content: center;
+align-items: center;
+top: 50%;
+left: 50%;
+height: 0%;
+transform: translate(-50%, -50%);
+filter: blur(12px);
+opacity: 0;
+background: #fff;
+width: 100%;
+transition: .5s;
+}
+
+#book .info .info-card .hidden-content .text {
+height: 80%;
+width: 80%;
+padding: 5px;
+overflow: hidden;
+text-overflow: ellipsis;
+font-size: 14px;
+color: #676767;
+float: left;
+clear: both;
+text-align: justify;
+}
+
+#book .info .info-card .hidden-content .text::first-letter {
+font-size: 20px;
+float: left;
+margin: 0 .2em 0 0;
+}
+
+#book .info a:hover + .info-card .hidden-content {
+opacity: 1;
+height: 100%;
+width: 100%;
+filter: unset;
+}
+
+#book .content li .info a[target="_blank"]:hover {
+color: #0056b3;
+text-decoration: underline;
+}
+
+#book .content li .info .pwd-text {
+font-size: 16px;
+color: #666;
+margin-top: 3px;
+}
+
+/* 代码块样式 */
+/* 定义根级别的CSS变量 */
+:root {
+    /* 日间模式的默认值 */
+    --code-block-bg: #ffffff;
+    --code-block-header-bg: #f5f5f5;
+    --code-block-text: #2c3e50;
+    --code-block-shadow: rgba(0, 0, 0, 0.1);
+    --code-comment-color: #6a737d;
+    --code-string-color: #2e7d32;
+    --code-keyword-color: #1976d2;
+    --code-function-color: #0d47a1;
+    --code-number-color: #e64a19;
+    --code-attribute-color: #d32f2f;
+    --code-tag-color: #1565c0;
+}
+
+/* 夜间模式的值 */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --code-block-bg: #212121;
+        --code-block-header-bg: #1c1c1c;
+        --code-block-text: #EEFFFF;
+        --code-block-shadow: rgba(0, 0, 0, 0.4);
+        --code-comment-color: #969896;
+        --code-string-color: #C3E88D;
+        --code-keyword-color: #89DDFF;
+        --code-function-color: #82AAFF;
+        --code-number-color: #F78C6C;
+        --code-attribute-color: #FF5370;
+        --code-tag-color: #89DDFF;
+    }
+}
+
+/* 代码块样式 */
+.highlight-wrap[data-rel] {
+    position: relative;
+    overflow: hidden;
+    border-radius: 10px;
+    box-shadow: 0 0px 10px 0px rgba(0, 0, 0, 0.4);
+    margin: 15px 0;
+}
+
+.highlight-wrap[data-rel]:hover {
+    transition: box-shadow 0.3s ease-in-out;
+    box-shadow: 0 0px 30px 0px rgba(0, 0, 0, 0.4);
+}
+
+/* 代码块顶部样式 */
+.highlight-wrap[data-rel]::before {
+    content: attr(data-rel);
+    height: 38px;
+    line-height: 38px;
+    background: #1c1c1c;
+    color: #EEFFFF;
+    font-size: 16px;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    font-weight: bold;
+    padding: 0px 80px;
+    text-indent: 15px;
+    float: left;
+}
+
+/* Mac风格按钮 */
+.highlight-wrap[data-rel]::after {
+    content: ' ';
+    position: absolute;
+    border-radius: 50%;
+    background: #fc625d;
+    width: 12px;
+    height: 12px;
+    top: 0;
+    left: 20px;
+    margin-top: 13px;
+    box-shadow: 20px 0px #fdbc40, 40px 0px #35cd4b;
+    z-index: 3;
+}
+
+/* 代码块主体样式调整 */
+.highlight-wrap .highlight {
+    margin: 0;
+    padding: 40px 0 10px;
+    background: #212121;
+}
+
+/* 代码配色方案 */
+.highlight pre {
+    background: #212121;
+    color: #EEFFFF;
+}
+
+.highlight .comment { color: #969896; }
+.highlight .string { color: #C3E88D; }
+.highlight .keyword { color: #89DDFF; }
+.highlight .function { color: #82AAFF; }
+.highlight .number { color: #F78C6C; }
+.highlight .attribute { color: #FF5370; }
+.highlight .tag { color: #89DDFF; }
+
+
+body .footer-inner #g-post-count-id {
+    font-size: 0.85rem;
+    color: var(--text-color);
+    font-weight: 400;
+    letter-spacing: 0.36px;
+    line-height: 27px;
+    box-sizing: border-box;
+    overflow-wrap: break-word;
+    text-align: center;
+    word-spacing: 0.3em;
+}
+
+/* 印记特效样式 */
+.fade-text {
+    display: inline-block;
+    color: var(--text-color);
+    filter: blur(0.8px);
+    transform: matrix(0.992546, 0.121869, -0.121869, 0.992546, -0.329047, 2.67987);
+    transition: all 0.3s ease;
+    opacity: 0.85;  /* 可选：如果想要保持一点淡化效果 */
+}
+
+/* 悬停效果 */
+.fade-text:hover {
+    filter: blur(2px);
+    transform: matrix(0.992546, 0.121869, -0.121869, 0.992546, -0.329047, 3.67987);
+}
+
+/* 书单分页样式 */
+.book-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 20px 0;
+    padding: 15px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.search-container {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.search-input {
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 20px;
+    font-size: 14px;
+    width: 200px;
+    outline: none;
+    transition: all 0.3s ease;
+}
+
+.search-input:focus {
+    border-color: #007bff;
+    box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+}
+
+.search-btn {
+    padding: 8px 12px;
+    background: #007bff;
+    color: white;
+    border: none;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background 0.3s ease;
+}
+
+.search-btn:hover {
+    background: #0056b3;
+}
+
+.book-stats {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    font-size: 14px;
+    color: #666;
+}
+
+.book-stats span {
+    padding: 4px 8px;
+    background: rgba(255, 255, 255, 0.8);
+    border-radius: 12px;
+    font-weight: 500;
+}
+
+/* 书单专用分页导航样式 */
+.book-pagination-container {
+    display: flex;
+    justify-content: center;
+    margin: 30px 0;
+}
+
+.book-pagination {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    padding: 12px;
+    border-radius: 12px;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.book-page-btn {
+    padding: 8px 16px;
+    background: #007bff;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.3s ease;
+    font-weight: 500;
+}
+
+.book-page-btn:hover:not(:disabled) {
+    background: #0056b3;
+    transform: translateY(-1px);
+}
+
+.book-page-btn:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.book-page-numbers {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin: 0 10px;
+}
+
+.book-page-number {
+    padding: 6px 10px;
+    background: rgba(255, 255, 255, 0.8);
+    color: #333;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.3s ease;
+    min-width: 36px;
+    text-align: center;
+}
+
+.book-page-number:hover {
+    background: #007bff;
+    color: white;
+    border-color: #007bff;
+    transform: translateY(-1px);
+}
+
+.book-page-number.active {
+    background: #007bff;
+    color: white;
+    border-color: #007bff;
+    font-weight: bold;
+}
+
+.book-page-ellipsis {
+    color: #666;
+    font-size: 14px;
+    padding: 0 5px;
+}
+
+/* 书单响应式设计 */
+@media screen and (max-width: 768px) {
+    .book-controls {
+        flex-direction: column;
+        gap: 15px;
+        text-align: center;
+    }
+
+    .search-container {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .search-input {
+        width: 250px;
+        max-width: 100%;
+    }
+
+    .book-stats {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .book-pagination {
+        flex-wrap: wrap;
+        gap: 4px;
+        padding: 8px;
+    }
+
+    .book-page-btn {
+        padding: 6px 12px;
+        font-size: 12px;
+    }
+
+    .book-page-number {
+        padding: 4px 8px;
+        min-width: 30px;
+        font-size: 12px;
+    }
+}
+
+/* 暗黑模式适配 */
+@media (prefers-color-scheme: dark) {
+    .book-controls {
+        background: rgba(33, 33, 33, 0.9);
+        border-color: rgba(255, 255, 255, 0.1);
+    }
+
+    .search-input {
+        background: #333;
+        color: #fff;
+        border-color: #555;
+    }
+
+    .search-input:focus {
+        border-color: #007bff;
+        box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+    }
+
+    .book-stats span {
+        background: rgba(255, 255, 255, 0.1);
+        color: #ccc;
+    }
+
+}
+
+[data-user-color-scheme='dark'] .book-controls {
+    background: rgba(33, 33, 33, 0.9);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+[data-user-color-scheme='dark'] .search-input {
+    background: #333;
+    color: #fff;
+    border-color: #555;
+}
+
+[data-user-color-scheme='dark'] .search-input:focus {
+    border-color: #007bff;
+}
+
+[data-user-color-scheme='dark'] .book-stats span {
+    background: rgba(255, 255, 255, 0.1);
+    color: #ccc;
+}
+
+[data-user-color-scheme='dark'] .book-pagination {
+    background: rgba(33, 33, 33, 0.9);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+[data-user-color-scheme='dark'] .book-page-number {
+    background: rgba(255, 255, 255, 0.1);
+    color: #ccc;
+    border-color: #555;
+}
+
+[data-user-color-scheme='dark'] .book-page-number:hover {
+    background: #007bff;
+    color: white;
+}

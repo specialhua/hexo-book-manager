@@ -1,15 +1,22 @@
 {
   "name": "hexo-book-manager",
   "private": true,
+<<<<<<< HEAD
   "version": "1.0.1",
   "description": "书籍管理工具 - 为 Hexo 博客生成书单页面",
+=======
+  "version": "1.0.5",
+  "description": "书籍管理工具 - 管理Fluid主题的书单页面",
+>>>>>>> 533b48a (主界面增加css和js代码下载)
   "author": "Specialhua <inkcodes.com>",
   "type": "module",
   "main": "dist-electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "dev:electron": "vite --mode electron",
-    "build": "vite build --mode electron && electron-builder --publish always",
+    "build": "vite build --mode electron && electron-builder --publish never --dir",
+    "build:appimage": "vite build --mode electron && electron-builder --publish never --linux AppImage",
+    "build:publish": "vite build --mode electron && electron-builder --publish always",
     "build:dir": "vite build && electron-builder --dir",
     "build:electron": "tsc -p electron && node scripts/build-cjs.cjs && vite build --mode electron",
     "type-check": "tsc --noEmit --skipLibCheck",
@@ -48,15 +55,6 @@
     "files": [
       "dist/**/*",
       "dist-electron/**/*"
-    ],
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "specialhua",
-        "repo": "hexo-book-manager",
-        "draft": false,
-        "prerelease": false
-      }
     ],
     "mac": {
       "category": "public.app-category.productivity"

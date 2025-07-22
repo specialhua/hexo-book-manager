@@ -30,6 +30,9 @@ export interface ElectronAPI {
   
   // 外部链接相关API
   openExternalLink: (url: string) => Promise<{ success: boolean, data?: { url: string }, error?: string }>
+  
+  // 主题文件保存相关API
+  saveThemeFile: (params: { filename: string, content: string, type: 'css' | 'js' }) => Promise<{ success: boolean, data?: { filePath: string }, error?: string }>
 }
 
 // 暴露API到渲染进程
@@ -97,6 +100,11 @@ const electronAPI = {
   openExternalLink: (url: string) => {
     console.log('preload.ts: openExternalLink 被调用', url)
     return ipcRenderer.invoke('open-external-link', url)
+  },
+  
+  saveThemeFile: (params: { filename: string, content: string, type: 'css' | 'js' }) => {
+    console.log('preload.ts: saveThemeFile 被调用', params.filename)
+    return ipcRenderer.invoke('save-theme-file', params)
   }
 } as ElectronAPI
 

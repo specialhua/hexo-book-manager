@@ -597,3 +597,40 @@ ipcMain.handle('open-external-link', async (event, url: string) => {
     }
   }
 })
+
+// 保存主题文件
+ipcMain.handle('save-theme-file', async (event, params: { filename: string, content: string, type: 'css' | 'js' }) => {
+  try {
+    const { filename, content, type } = params
+    
+    // 根据文件类型设置默认扩展名和过滤器
+    const extensions = type === 'css' ? ['css'] : ['js']
+    const filterName = type === 'css' ? 'CSS文件' : 'JavaScript文件'
+    
+    const result = await dialog.showSaveDialog(mainWindow!, {
+      defaultPath: filename,
+      filters: [
+        { name: filterName, extensions },
+        { name: '所有文件', extensions: ['*'] }
+      ],
+      properties: ['createDirectory']
+    })
+    
+    if (result.canceled || !result.filePath) {
+      return { success: false, error: '用户取消保存' }
+    }
+    
+    const fs = await import('fs')
+    fs.writeFileSync(result.filePath, content, 'utf8')
+    
+    return { 
+      success: true, 
+      data: { 
+        filePath: result.filePath 
+      } 
+    }
+  } catch (error) {
+    console.error('Save theme file failed:', error)
+    return { success: false, error: (error as Error).message }
+  }
+})
