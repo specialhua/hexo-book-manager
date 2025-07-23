@@ -122,3 +122,43 @@ jobs:
         path: |
           release/
         retention-days: 30
+
+  create-github-release:
+    needs: build
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: ./artifacts
+    
+    - name: List downloaded artifacts
+      run: |
+        echo "Downloaded artifacts:"
+        find ./artifacts -type f -name "*.exe" -o -name "*.dmg" -o -name "*.AppImage" -o -name "*.deb" | sort
+    
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ github.event.inputs.version }}
+        name: Release ${{ github.event.inputs.version }}
+        body: |
+          🚀 Release ${{ github.event.inputs.version }}
+          
+          ## Downloads
+          - **Windows**: Download the `.exe` installer or portable version
+          - **macOS**: Download the `.dmg` file
+          - **Linux**: Download the `.AppImage` or `.deb` package
+          
+          ## Changes
+          Please check the commit history for detailed changes.
+        files: |
+          ./artifacts/**/*.exe
+          ./artifacts/**/*.dmg
+          ./artifacts/**/*.AppImage
+          ./artifacts/**/*.deb
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
