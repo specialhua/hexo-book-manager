@@ -167,20 +167,16 @@
             刷新
           </n-button>
           
-          <n-button 
-            @click="manualCheckVersions" 
-            :loading="checkingVersions" 
-            :disabled="!hasBlogConfig"
-          >
-            <template #icon>
-              <n-icon><SyncIcon /></n-icon>
-            </template>
-            版本检查
-          </n-button>
-          
-          <n-tag :type="versionStatusDisplay.type" size="small">
-            {{ versionStatusDisplay.text }}
-          </n-tag>
+          <!-- 版本检查控件 -->
+          <VersionCheckControl
+            :checking-versions="checkingVersions"
+            :has-blog-config="hasBlogConfig"
+            :version-status-display="versionStatusDisplay"
+            :version-conflict-data="versionConflictData"
+            v-model:show-version-conflict="showVersionConflict"
+            @manual-check="manualCheckVersions"
+            @conflict-resolved="handleVersionConflictResolved"
+          />
           
           <n-button @click="generateHTML">
             <template #icon>
@@ -431,14 +427,6 @@
       v-model:visible="showFirstTimeSetup"
       @completed="handleFirstTimeSetupCompleted"
     />
-
-    <!-- 版本冲突解决对话框 -->
-    <VersionConflictDialog
-      v-if="versionConflictData"
-      v-model:visible="showVersionConflict"
-      :compare-result="versionConflictData"
-      @resolved="handleVersionConflictResolved"
-    />
     
     <!-- 回到顶部按钮 -->
     <Transition name="back-to-top">
@@ -469,14 +457,15 @@ import AddBookForm from './AddBookForm.vue'
 import EditBookForm from './EditBookForm.vue'
 import BookCard from './BookCard.vue'
 import FirstTimeSetup from './FirstTimeSetup.vue'
-import VersionConflictDialog from './VersionConflictDialog.vue'
+import VersionCheckControl from './VersionCheckControl.vue'
 import { AddIcon, RefreshIcon, SaveIcon, GridIcon, ListIcon, QuestionIcon, LinkIcon, SyncIcon, FolderIcon, DatabaseIcon, CopyIcon } from './Icons'
 import type { Book, IsbnApiConfig } from '../types'
 import { parseExistingBooks, generateIndexMd, type OriginalFileStructure } from '../utils/bookParser'
 import { readFile, downloadFile, storage, type FileInfo } from '../utils/browserAPI'
 import type { ImageBedConfig } from '../utils/imageBed'
-import { versionSyncManager, type VersionCompareResult } from '../utils/versionSync'
 import { getSampleBooks } from '../config/sampleData'
+import { useVersionCheck } from '../composables/useVersionCheck'
+import { useFirstTimeSetup } from '../composables/useFirstTimeSetup'
 
 // 接收图床配置和ISBN API配置
 const props = defineProps<{
@@ -497,39 +486,48 @@ const editingBook = ref<Book | null>(null)
 const viewMode = ref<'grid' | 'table'>('grid')
 const currentFile = ref<{ fileName: string; filePath: string } | null>(null)
 
-// 版本同步相关状态
-const showFirstTimeSetup = ref(false)
-const showVersionConflict = ref(false)
-const versionConflictData = ref<VersionCompareResult | null>(null)
-const checkingVersions = ref(false)
-const versionStatus = ref<'synced' | 'conflict' | 'checking' | 'unknown'>('unknown')
-// 状态锁定机制：防止首次设置完成后被自动检查覆盖
-const versionStatusLocked = ref(false)
-const versionStatusLockTimeout = ref<NodeJS.Timeout | null>(null)
-
-// 响应式的博客配置状态
-const blogConfigState = ref(versionSyncManager.getBlogConfig())
-
-// 计算是否配置了博客
-const hasBlogConfig = computed(() => {
-  return blogConfigState.value && blogConfigState.value.blogPath
+// 使用版本检查 composable
+const {
+  versionStatus,
+  checkingVersions,
+  versionConflictData,
+  showVersionConflict,
+  blogConfigState,
+  hasBlogConfig,
+  versionStatusDisplay,
+  setVersionStatus,
+  forceSetVersionStatus,
+  checkVersions,
+  manualCheckVersions,
+  handleVersionConflictResolved,
+  resetSortOrder: resetSortOrderFromComposable,
+  updateBlogConfigState,
+  notifyVersionStatusUpdate,
+  versionSyncManager
+} = useVersionCheck({
+  onVersionStatusChange: (status) => {
+    console.log('版本状态变更:', status)
+  },
+  onConflictResolved: (success) => {
+    if (success) {
+      // 冲突解决成功后可能需要刷新数据
+      loadBooks()
+    }
+  }
 })
 
-// 计算版本状态显示
-const versionStatusDisplay = computed(() => {
-  if (!hasBlogConfig.value) {
-    return { text: '未配置', type: 'default' as const }
-  }
-  
-  switch (versionStatus.value) {
-    case 'synced':
-      return { text: '已同步', type: 'success' as const }
-    case 'conflict':
-      return { text: '有冲突', type: 'warning' as const }
-    case 'checking':
-      return { text: '检查中', type: 'info' as const }
-    default:
-      return { text: '未知', type: 'default' as const }
+// 使用首次设置 composable
+const {
+  showFirstTimeSetup,
+  checkIfFirstTimeUser,
+  handleFirstTimeSetupCompleted: handleFirstTimeSetupCompletedCore
+} = useFirstTimeSetup({
+  onDataLoaded: (loadedBooks, loadedFile) => {
+    // 数据加载回调
+    books.value = loadedBooks
+    currentFile.value = loadedFile
+    originalFileOrder.value = loadedBooks
+    originalFileStructure.value = storage.load<OriginalFileStructure>('originalFileStructure', null)
   }
 })
 
@@ -990,10 +988,7 @@ const saveBooks = () => {
     // 用户需要手动进行版本检查和确认
     
     // 如果配置了博客路径，更新版本状态为可能有冲突
-    const blogConfig = versionSyncManager.getBlogConfig()
-    if (blogConfig && blogConfig.blogPath) {
-      setVersionStatus('conflict')
-    }
+    notifyVersionStatusUpdate()
     
     return true
   } catch (error) {
@@ -1172,37 +1167,13 @@ const handleTableDragEnd = () => {
 
 // 回溯调整 - 使用博客文件的数据覆盖缓存
 const resetSortOrder = async () => {
-  // 使用 Naive UI 对话框
-  dialog.warning({
-    title: '确认回溯调整',
-    content: '回溯调整会使用博客文件的数据覆盖当前缓存，这将恢复书籍的原始顺序和内容。',
-    positiveText: '确定',
-    negativeText: '取消',
-    onPositiveClick: async () => {
-      loading.value = true
-      try {
-        // 从博客文件同步数据
-        const syncedBooks = await versionSyncManager.syncFromBlog()
-        
-        if (syncedBooks && syncedBooks.length > 0) {
-          // 更新界面
-          books.value = syncedBooks
-          
-          // 设置版本状态为已同步
-          forceSetVersionStatus('synced')
-          
-          message.success(`回溯调整完成，已恢复 ${syncedBooks.length} 本书籍`)
-        } else {
-          message.warning('博客文件中没有书籍数据')
-        }
-      } catch (error) {
-        console.error('回溯调整失败:', error)
-        message.error('回溯调整失败：' + (error as Error).message)
-      } finally {
-        loading.value = false
-      }
-    }
-  })
+  const syncedBooks = await resetSortOrderFromComposable()
+  if (syncedBooks && syncedBooks.length > 0) {
+    books.value = syncedBooks
+    originalFileOrder.value = syncedBooks
+    originalFileStructure.value = storage.load<OriginalFileStructure>('originalFileStructure', null)
+    currentFile.value = storage.load<{ fileName: string; filePath: string }>('currentFile', null)
+  }
 }
 
 const clearAllCache = () => {
@@ -1291,379 +1262,23 @@ const isBlogMode = computed(() => {
   return blogConfig && blogConfig.blogPath && currentFile.value && currentFile.value.filePath === blogConfig.blogPath
 })
 
-// 版本同步相关方法
-const checkIfFirstTimeUser = () => {
-  const hasSeenSetup = storage.load<boolean>('hasSeenFirstTimeSetup', false)
-  const blogConfig = versionSyncManager.getBlogConfig()
-  
-  // 只要没有见过设置或者没有博客配置，就显示设置界面
-  if (!hasSeenSetup || !blogConfig) {
-    showFirstTimeSetup.value = true
-  }
-}
-
-// 安全地设置版本状态（带锁定机制）
-const setVersionStatus = (status: 'synced' | 'conflict' | 'checking' | 'unknown', lockDuration?: number) => {
-  // 如果状态被锁定，只允许手动操作覆盖
-  if (versionStatusLocked.value) {
-    return
-  }
-  
-  versionStatus.value = status
-  
-  // 如果指定了锁定时间，锁定状态
-  if (lockDuration && lockDuration > 0) {
-    versionStatusLocked.value = true
-    
-    // 清除之前的锁定定时器
-    if (versionStatusLockTimeout.value) {
-      clearTimeout(versionStatusLockTimeout.value)
-    }
-    
-    // 设置新的解锁定时器
-    versionStatusLockTimeout.value = setTimeout(() => {
-      versionStatusLocked.value = false
-      versionStatusLockTimeout.value = null
-    }, lockDuration)
-  }
-}
-
-// 强制设置版本状态（忽略锁定）
-const forceSetVersionStatus = (status: 'synced' | 'conflict' | 'checking' | 'unknown') => {
-  // 清除锁定
-  if (versionStatusLockTimeout.value) {
-    clearTimeout(versionStatusLockTimeout.value)
-    versionStatusLockTimeout.value = null
-  }
-  versionStatusLocked.value = false
-  
-  versionStatus.value = status
-}
-
+// 包装首次设置完成处理函数
 const handleFirstTimeSetupCompleted = async (blogPath: string | null) => {
-  try {
-    // 立即保存设置标记
-    storage.save('hasSeenFirstTimeSetup', true)
-    
-    if (blogPath) {
-      // 确保博客路径设置完成
-      await versionSyncManager.setBlogPath(blogPath)
-      
-      // 立即更新响应式的博客配置状态
-      blogConfigState.value = versionSyncManager.getBlogConfig()
-      
-      // 验证保存结果
-      const savedConfig = versionSyncManager.getBlogConfig()
-      const savedSetup = storage.load<boolean>('hasSeenFirstTimeSetup', false)
-      
-      // 显示加载状态
-      loading.value = true
-      
-      try {
-        // 直接从博客文件同步数据到缓存，而不是加载示例数据
-        const syncedBooks = await versionSyncManager.syncFromBlog()
-        
-        if (syncedBooks && syncedBooks.length > 0) {
-          // 更新界面显示
-          books.value = syncedBooks
-          
-          // 设置当前文件信息
-          currentFile.value = {
-            fileName: blogPath.split('/').pop() || 'index.md',
-            filePath: blogPath
-          }
-          
-          // 重要：保存所有数据到localStorage
-          storage.save('books', books.value)
-          storage.save('currentFile', currentFile.value)
-          
-          // 设置为已同步状态 - 锁定状态5秒
-          setVersionStatus('synced', 5000)
-          
-          message.success(`设置完成！成功加载 ${syncedBooks.length} 本书籍`)
-        } else {
-          // 博客文件为空，询问用户是否使用示例数据
-          const useExample = window.confirm(
-            '博客文件中没有找到书籍数据。\n\n' +
-            '点击"确定"使用示例数据开始体验，\n' +
-            '点击"取消"保持空白状态。'
-          )
-          
-          if (useExample) {
-            // 加载示例数据
-            books.value = getSampleBooks()
-            
-            // 保存示例数据到缓存
-            storage.save('books', books.value)
-            
-            // 使用示例数据时，不设置currentFile（保持为null）
-            // 这样提示框会正确显示"使用示例数据"而不是"博客目录"
-            currentFile.value = null
-            
-            // 保存示例数据到缓存
-            storage.save('books', books.value)
-            storage.save('currentFile', currentFile.value)
-            
-            setVersionStatus('conflict', 3000) // 因为缓存有示例数据，博客文件为空，锁定3秒
-            message.info('已加载示例数据，您可以开始添加书籍')
-          } else {
-            // 保持空白状态
-            books.value = []
-            currentFile.value = {
-              fileName: blogPath.split('/').pop() || 'index.md',
-              filePath: blogPath
-            }
-            
-            // 保存到localStorage
-            storage.save('books', books.value)
-            storage.save('currentFile', currentFile.value)
-            
-            setVersionStatus('synced', 3000) // 都是空的，算作同步，锁定3秒
-            message.info('设置完成，您可以开始添加书籍')
-          }
-        }
-      } catch (syncError) {
-        console.error('从博客文件同步失败:', syncError)
-        
-        // 同步失败，询问用户是否使用示例数据
-        const useExample = window.confirm(
-          `从博客文件加载数据失败：${syncError.message}\n\n` +
-          '点击"确定"使用示例数据开始体验，\n' +
-          '点击"取消"重新设置博客路径。'
-        )
-        
-        if (useExample) {
-          // 使用示例数据
-          books.value = getSampleBooks()
-          
-          // 保存示例数据到缓存
-          storage.save('books', books.value)
-          
-          currentFile.value = null // 清除文件信息，因为同步失败
-          setVersionStatus('unknown')
-          message.info('已加载示例数据，建议重新设置博客路径')
-        } else {
-          // 用户选择重新设置，清除配置
-          versionSyncManager.clearBlogConfig()
-          blogConfigState.value = null // 更新响应式状态
-          storage.save('hasSeenFirstTimeSetup', false)
-          
-          books.value = []
-          currentFile.value = null
-          setVersionStatus('unknown')
-          
-          message.error('请重新设置博客路径')
-          
-          // 重新显示首次设置对话框
-          setTimeout(() => {
-            showFirstTimeSetup.value = true
-          }, 500)
-        }
-      } finally {
-        loading.value = false
-      }
-    } else {
-      // 用户跳过设置，使用示例数据，但不调用loadBooks()以避免版本检查冲突
-      // 直接使用示例数据而不触发延迟的版本检查
-      books.value = getSampleBooks()
-      originalFileOrder.value = []
-      currentFile.value = null
-      
-      // 保存到localStorage
-      storage.save('books', books.value)
-      storage.save('originalFileOrder', originalFileOrder.value)
-      storage.save('currentFile', currentFile.value)
-      
-      setVersionStatus('unknown')
-      message.info('使用示例数据，您可以通过"从文件加载"来导入现有书单')
-    }
-  } catch (error) {
-    console.error('首次设置完成处理失败:', error)
-    loading.value = false
-    
-    // 发生错误时的处理
-    if (blogPath) {
-      message.error('设置失败：' + error.message)
-      setVersionStatus('unknown')
-    } else {
-      // 跳过设置时出错，加载示例数据，但不调用loadBooks()以避免版本检查冲突
-      books.value = getSampleBooks()
-      originalFileOrder.value = []
-      currentFile.value = null
-      
-      // 保存到localStorage
-      storage.save('books', books.value)
-      storage.save('originalFileOrder', originalFileOrder.value)
-      storage.save('currentFile', currentFile.value)
-      
-      setVersionStatus('unknown')
-      message.info('使用示例数据，您可以通过"从文件加载"来导入现有书单')
-    }
-  }
+  const result = await handleFirstTimeSetupCompletedCore(
+    blogPath,
+    setVersionStatus,
+    forceSetVersionStatus,
+    blogConfigState
+  )
+  
+  // 更新本地状态
+  books.value = result.books
+  currentFile.value = result.currentFile
+  originalFileOrder.value = result.originalFileOrder
+  originalFileStructure.value = result.originalFileStructure
 }
 
-const checkVersions = async () => {
-  const blogConfig = versionSyncManager.getBlogConfig()
-  if (!blogConfig) {
-    return
-  }
-  
-  // 只有开启了自动版本检查才执行自动检查
-  if (!blogConfig.autoVersionCheck) {
-    return
-  }
-  
-  // 如果状态被锁定，跳过自动检查
-  if (versionStatusLocked.value) {
-    return
-  }
-  
-  setVersionStatus('checking')
-  
-  try {
-    const compareResult = await versionSyncManager.compareVersions()
-    
-    if (compareResult) {
-      if (compareResult.hasConflict) {
-        setVersionStatus('conflict')
-        versionConflictData.value = compareResult
-        // 自动检查时不自动弹出对话框，等待用户手动点击
-        // showVersionConflict.value = true
-      } else {
-        setVersionStatus('synced')
-      }
-    } else {
-      setVersionStatus('unknown')
-    }
-  } catch (error) {
-    console.error('版本检查失败:', error)
-    setVersionStatus('unknown')
-  }
-}
 
-const manualCheckVersions = async () => {
-  const blogConfig = versionSyncManager.getBlogConfig()
-  if (!blogConfig) {
-    message.warning('请先在设置中配置博客文件路径')
-    return
-  }
-  
-  // 防止重复调用
-  if (checkingVersions.value) {
-    message.info('版本检查正在进行中，请稍候...')
-    return
-  }
-  
-  // 设置状态为检查中
-  checkingVersions.value = true
-  forceSetVersionStatus('checking')
-  
-  // 创建一个保险机制，确保状态在合理时间内被重置
-  const safetyTimeout = setTimeout(() => {
-    console.error('版本检查超时，强制重置状态')
-    checkingVersions.value = false
-    forceSetVersionStatus('unknown')
-    message.error('版本检查超时，请稍后重试')
-  }, 15000) // 减少到15秒超时保护
-  
-  try {
-    const compareResult = await versionSyncManager.compareVersions()
-    
-    // 清除超时保护
-    clearTimeout(safetyTimeout)
-    
-    if (compareResult) {
-      if (compareResult.hasConflict) {
-        forceSetVersionStatus('conflict')
-        versionConflictData.value = compareResult
-        
-        // 延迟显示冲突对话框，确保状态已更新
-        await new Promise(resolve => setTimeout(resolve, 100))
-        
-        try {
-          showVersionConflict.value = true
-          message.info('检测到版本冲突，请选择处理方式')
-        } catch (dialogError) {
-          console.error('显示版本冲突对话框失败:', dialogError)
-          message.error('无法显示版本冲突对话框，请检查系统配置')
-          forceSetVersionStatus('unknown')
-        }
-      } else {
-        forceSetVersionStatus('synced')
-        message.success('版本检查完成，缓存与博客文件已同步')
-      }
-    } else {
-      forceSetVersionStatus('unknown')
-      message.warning('版本检查失败，请检查博客文件路径')
-    }
-  } catch (error) {
-    // 清除超时保护
-    clearTimeout(safetyTimeout)
-    
-    console.error('版本检查失败:', error)
-    forceSetVersionStatus('unknown')
-    
-    // 简化错误处理
-    if (error instanceof Error) {
-      if (error.message.includes('超时')) {
-        message.error('版本检查超时：可能文件正被其他程序占用，请稍后重试')
-      } else if (error.message.includes('不存在')) {
-        message.error('版本检查失败：博客文件不存在，请检查路径')
-      } else if (error.message.includes('权限')) {
-        message.error('版本检查失败：没有访问文件的权限')
-      } else {
-        message.error(`版本检查失败：${error.message}`)
-      }
-    } else {
-      message.error('版本检查失败：未知错误')
-    }
-  } finally {
-    // 确保状态被重置
-    checkingVersions.value = false
-  }
-}
-
-const handleVersionConflictResolved = async (success: boolean) => {
-  if (success) {
-    // 更新版本状态为已同步
-    forceSetVersionStatus('synced') // 用户操作，强制设置
-    
-    // 冲突解决成功后，需要同步版本标识
-    const blogConfig = versionSyncManager.getBlogConfig()
-    if (blogConfig) {
-      // 生成当前缓存数据的版本标识
-      const currentCacheVersion = versionSyncManager.getCurrentCacheVersion()
-      
-      // 更新博客配置中的版本标识
-      const newConfig = {
-        ...blogConfig,
-        lastSyncTime: Date.now(),
-        cacheVersion: currentCacheVersion
-      }
-      versionSyncManager.setBlogConfig(newConfig)
-      blogConfigState.value = newConfig // 更新响应式状态
-      
-      console.log('✅ 版本标识已同步:', currentCacheVersion)
-    }
-    
-    // 用户选择后直接标记为成功，不再进行过度严格的验证
-    console.log('✅ 用户选择的冲突解决方案已应用')
-    message.success('版本冲突已成功解决')
-  } else {
-    // 如果解决失败，保持冲突状态
-    forceSetVersionStatus('conflict') // 用户操作，强制设置
-    message.error('冲突解决失败，请重试')
-  }
-  
-  // 清理冲突数据
-  versionConflictData.value = null
-  showVersionConflict.value = false
-}
-
-const syncWithBlog = async (books: Book[]) => {
-  // 已弃用：不再自动同步到博客文件
-  // 用户需要通过版本检查和确认来手动同步
-}
 
 onMounted(() => {
   // 从本地存储读取应用设置

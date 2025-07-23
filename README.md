@@ -85,7 +85,7 @@ npm run build
 book-manager/
 ├── src/
 │   ├── components/           # Vue 组件
-│   │   ├── BookManager.vue   # 主管理界面
+│   │   ├── BookManager.vue   # 主管理界面（核心书籍管理功能）
 │   │   ├── BookCard.vue      # 书籍卡片组件
 │   │   ├── AddBookForm.vue   # 添加书籍表单
 │   │   ├── EditBookForm.vue  # 编辑书籍表单
@@ -93,8 +93,12 @@ book-manager/
 │   │   ├── AppContent.vue    # 内容容器
 │   │   ├── AppSettings.vue   # 设置界面
 │   │   ├── FirstTimeSetup.vue # 首次设置向导
+│   │   ├── VersionCheckControl.vue # 版本检查控件
 │   │   ├── VersionConflictDialog.vue # 版本冲突对话框
 │   │   └── Icons.ts          # 图标组件
+│   ├── composables/          # Vue 3 组合式函数（业务逻辑复用）
+│   │   ├── useVersionCheck.ts # 版本检查逻辑
+│   │   └── useFirstTimeSetup.ts # 首次设置逻辑
 │   ├── config/               # 配置文件
 │   │   └── sampleData.ts     # 示例数据
 │   ├── types/                # TypeScript 类型定义
