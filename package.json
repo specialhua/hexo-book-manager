@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "vite",
     "dev:electron": "vite --mode electron",
-    "build": "vite build --mode electron && electron-builder --publish never --dir",
+    "build": "vite build --mode electron && electron-builder --publish never",
     "build:appimage": "vite build --mode electron && electron-builder --publish never --linux AppImage",
     "build:publish": "vite build --mode electron && electron-builder --publish always",
     "build:dir": "vite build && electron-builder --dir",
