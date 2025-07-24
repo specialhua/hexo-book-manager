@@ -78,7 +78,21 @@
                     暂时跳过
                   </div>
                   <div class="option-description">
-                    继续使用当前的缓存模式，您可以稍后在设置中配置
+                    继续使用当前的缓存模式，下次启动时仍会提示设置
+                  </div>
+                </div>
+              </n-radio>
+              
+              <n-radio value="skip_permanently">
+                <div class="option-content">
+                  <div class="option-title">
+                    <n-icon size="16" class="error-icon">
+                      <CloseIcon />
+                    </n-icon>
+                    永久跳过
+                  </div>
+                  <div class="option-description">
+                    不再显示此设置引导，您可以稍后在设置菜单中手动配置博客路径
                   </div>
                 </div>
               </n-radio>
@@ -164,7 +178,11 @@
           :loading="processing"
           @click="handleConfirm"
         >
-          {{ setupChoice === 'setup_now' ? '完成设置' : '确认跳过' }}
+          {{ 
+            setupChoice === 'setup_now' ? '完成设置' : 
+            setupChoice === 'skip_permanently' ? '永久跳过' : 
+            '暂时跳过' 
+          }}
         </n-button>
       </n-space>
     </template>
@@ -187,6 +205,7 @@ import {
   useMessage
 } from 'naive-ui'
 import { versionSyncManager } from '../utils/versionSync'
+import { storage } from '../utils/browserAPI'
 
 // 图标组件
 const BookIcon = () => h('svg', {
@@ -234,6 +253,15 @@ const InfoIcon = () => h('svg', {
   })
 ])
 
+const CloseIcon = () => h('svg', {
+  viewBox: '0 0 24 24',
+  fill: 'currentColor'
+}, [
+  h('path', {
+    d: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z'
+  })
+])
+
 interface Props {
   visible: boolean
 }
@@ -252,7 +280,7 @@ const showModal = computed({
   set: (value: boolean) => emit('update:visible', value)
 })
 
-const setupChoice = ref<'setup_now' | 'skip_for_now'>('setup_now')
+const setupChoice = ref<'setup_now' | 'skip_for_now' | 'skip_permanently'>('setup_now')
 const blogPath = ref<string>('')
 const selecting = ref(false)
 const processing = ref(false)
@@ -295,8 +323,13 @@ const handleConfirm = async () => {
       await versionSyncManager.setBlogPath(blogPath.value)
       message.success('博客路径设置完成')
       emit('completed', blogPath.value)
+    } else if (setupChoice.value === 'skip_permanently') {
+      // 永久跳过设置
+      storage.save('permanentlySkippedSetup', true)
+      message.info('已设置为永久跳过，您可以稍后在设置菜单中配置博客路径，配置后"版本检查"功能即可使用')
+      emit('completed', null)
     } else {
-      // 跳过设置
+      // 暂时跳过设置
       emit('completed', null)
     }
   } catch (error) {
@@ -424,6 +457,10 @@ const handleCancel = () => {
 
 .warning-icon {
   color: var(--n-color-warning);
+}
+
+.error-icon {
+  color: var(--n-color-error);
 }
 
 .setup-tips {

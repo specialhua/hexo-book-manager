@@ -2,7 +2,7 @@ import { ref, Ref } from 'vue'
 import { useMessage } from 'naive-ui'
 import { storage } from '../utils/browserAPI'
 import { versionSyncManager } from '../utils/versionSync'
-import { getSampleBooks } from '../config/sampleData'
+import { loadDemoData } from '../utils/demoLoader'
 import type { Book } from '../types'
 import type { OriginalFileStructure } from '../utils/bookParser'
 
@@ -24,7 +24,13 @@ export function useFirstTimeSetup(options: UseFirstTimeSetupOptions = {}) {
   // 检查是否为首次使用
   const checkIfFirstTimeUser = () => {
     const hasSeenSetup = storage.load<boolean>('hasSeenFirstTimeSetup', false)
+    const permanentlySkipped = storage.load<boolean>('permanentlySkippedSetup', false)
     const blogConfig = versionSyncManager.getBlogConfig()
+    
+    // 如果永久跳过了，不再显示设置界面
+    if (permanentlySkipped) {
+      return
+    }
     
     // 只要没有见过设置或者没有博客配置，就显示设置界面
     if (!hasSeenSetup || !blogConfig) {
@@ -101,10 +107,13 @@ export function useFirstTimeSetup(options: UseFirstTimeSetupOptions = {}) {
             
             if (useExample) {
               // 加载示例数据
-              const sampleBooks = getSampleBooks()
+              const demoResult = await loadDemoData()
+              const sampleBooks = demoResult.books
+              const originalFileStructure = demoResult.originalFileStructure
               
               // 保存示例数据到缓存
               storage.save('books', sampleBooks)
+              storage.save('originalFileStructure', originalFileStructure)
               
               // 使用示例数据时，不设置currentFile（保持为null）
               // 这样提示框会正确显示"使用示例数据"而不是"博客目录"
@@ -119,8 +128,8 @@ export function useFirstTimeSetup(options: UseFirstTimeSetupOptions = {}) {
               return {
                 books: sampleBooks,
                 currentFile: null,
-                originalFileOrder: [],
-                originalFileStructure: null
+                originalFileOrder: sampleBooks, // 使用示例数据作为原始排序
+                originalFileStructure
               }
             } else {
               // 保持空白状态
@@ -160,10 +169,13 @@ export function useFirstTimeSetup(options: UseFirstTimeSetupOptions = {}) {
           
           if (useExample) {
             // 使用示例数据
-            const sampleBooks = getSampleBooks()
+            const demoResult = await loadDemoData()
+            const sampleBooks = demoResult.books
+            const originalFileStructure = demoResult.originalFileStructure
             
             // 保存示例数据到缓存
             storage.save('books', sampleBooks)
+            storage.save('originalFileStructure', originalFileStructure)
             
             setVersionStatus('unknown')
             message.info('已加载示例数据，建议重新设置博客路径')
@@ -174,8 +186,8 @@ export function useFirstTimeSetup(options: UseFirstTimeSetupOptions = {}) {
             return {
               books: sampleBooks,
               currentFile: null,
-              originalFileOrder: [],
-              originalFileStructure: null
+              originalFileOrder: sampleBooks, // 使用示例数据作为原始排序
+              originalFileStructure
             }
           } else {
             // 用户选择重新设置，清除配置
@@ -204,11 +216,14 @@ export function useFirstTimeSetup(options: UseFirstTimeSetupOptions = {}) {
         }
       } else {
         // 用户跳过设置，使用示例数据
-        const sampleBooks = getSampleBooks()
+        const demoResult = await loadDemoData()
+        const sampleBooks = demoResult.books
+        const originalFileStructure = demoResult.originalFileStructure
         
         // 保存到localStorage
         storage.save('books', sampleBooks)
-        storage.save('originalFileOrder', [])
+        storage.save('originalFileOrder', sampleBooks) // 使用示例数据作为原始排序
+        storage.save('originalFileStructure', originalFileStructure)
         storage.save('currentFile', null)
         
         setVersionStatus('unknown')
@@ -220,8 +235,8 @@ export function useFirstTimeSetup(options: UseFirstTimeSetupOptions = {}) {
         return {
           books: sampleBooks,
           currentFile: null,
-          originalFileOrder: [],
-          originalFileStructure: null
+          originalFileOrder: sampleBooks,
+          originalFileStructure
         }
       }
     } catch (error) {
@@ -235,24 +250,39 @@ export function useFirstTimeSetup(options: UseFirstTimeSetupOptions = {}) {
         setVersionStatus('unknown')
       } else {
         // 跳过设置时出错，加载示例数据
-        const sampleBooks = getSampleBooks()
-        
-        // 保存到localStorage
-        storage.save('books', sampleBooks)
-        storage.save('originalFileOrder', [])
-        storage.save('currentFile', null)
-        
-        setVersionStatus('unknown')
-        message.info('使用示例数据，您可以通过"从文件加载"来导入现有书单')
-        
-        // 触发数据加载回调
-        options.onDataLoaded?.(sampleBooks, null)
-        
-        return {
-          books: sampleBooks,
-          currentFile: null,
-          originalFileOrder: [],
-          originalFileStructure: null
+        try {
+          const demoResult = await loadDemoData()
+          const sampleBooks = demoResult.books
+          const originalFileStructure = demoResult.originalFileStructure
+          
+          // 保存到localStorage
+          storage.save('books', sampleBooks)
+          storage.save('originalFileOrder', sampleBooks) // 使用示例数据作为原始排序
+          storage.save('originalFileStructure', originalFileStructure)
+          storage.save('currentFile', null)
+          
+          setVersionStatus('unknown')
+          message.info('使用示例数据，您可以通过"从文件加载"来导入现有书单')
+          
+          // 触发数据加载回调
+          options.onDataLoaded?.(sampleBooks, null)
+          
+          return {
+            books: sampleBooks,
+            currentFile: null,
+            originalFileOrder: sampleBooks,
+            originalFileStructure
+          }
+        } catch (demoError) {
+          console.error('加载示例数据也失败了:', demoError)
+          message.error('加载示例数据失败，请手动导入数据文件')
+          
+          return {
+            books: [],
+            currentFile: null,
+            originalFileOrder: [],
+            originalFileStructure: null
+          }
         }
       }
       

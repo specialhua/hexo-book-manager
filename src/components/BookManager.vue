@@ -463,7 +463,7 @@ import type { Book, IsbnApiConfig } from '../types'
 import { parseExistingBooks, generateIndexMd, type OriginalFileStructure } from '../utils/bookParser'
 import { readFile, downloadFile, storage, type FileInfo } from '../utils/browserAPI'
 import type { ImageBedConfig } from '../utils/imageBed'
-import { getSampleBooks } from '../config/sampleData'
+import { loadDemoData } from '../utils/demoLoader'
 import { useVersionCheck } from '../composables/useVersionCheck'
 import { useFirstTimeSetup } from '../composables/useFirstTimeSetup'
 
@@ -853,8 +853,23 @@ const loadBooks = async () => {
       message.success(`已加载 ${savedBooks.length} 本书籍`)
     } else {
       // 如果没有保存的数据，使用示例数据
-      books.value = getSampleBooks()
-      originalFileOrder.value = []
+      try {
+        const demoResult = await loadDemoData()
+        books.value = demoResult.books
+        originalFileOrder.value = demoResult.books
+        originalFileStructure.value = demoResult.originalFileStructure
+        
+        // 保存示例数据到缓存
+        storage.save('books', demoResult.books)
+        storage.save('originalFileOrder', demoResult.books)
+        storage.save('originalFileStructure', demoResult.originalFileStructure)
+      } catch (error) {
+        console.error('加载示例数据失败:', error)
+        message.error('加载示例数据失败，请手动导入数据文件')
+        books.value = []
+        originalFileOrder.value = []
+        originalFileStructure.value = null
+      }
       
       // 重要：不要覆盖已经设置的 currentFile
       // 只有当 currentFile 真的不存在时才设置为 null
