@@ -16,7 +16,7 @@
           <h2>设置您的博客路径</h2>
           <p class="subtitle">
             为了提供更好的体验，我们建议您设置博客中的index.md文件路径。
-            这样可以实现缓存数据与博客文件的自动同步。
+            这样可以实现持久化存储数据与博客文件的自动同步。
           </p>
         </div>
 
@@ -27,7 +27,7 @@
             </n-icon>
             <div class="feature-content">
               <div class="feature-title">版本同步</div>
-              <div class="feature-description">自动检测缓存与博客文件的版本差异</div>
+              <div class="feature-description">自动检测持久化存储与博客文件的版本差异</div>
             </div>
           </div>
           

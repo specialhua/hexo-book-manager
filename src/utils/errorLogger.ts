@@ -3,6 +3,11 @@
  * 用于记录和分析应用中的错误信息
  */
 
+// 类型声明，解决在Node.js环境下编译时的类型错误
+declare var window: any
+declare var navigator: any
+declare var localStorage: any
+
 export interface ErrorLogEntry {
   id: string
   timestamp: string
@@ -52,8 +57,8 @@ class ErrorLogger {
       message,
       stack,
       context,
-      userAgent: navigator.userAgent,
-      url: window.location.href
+      userAgent: (typeof navigator !== 'undefined' && navigator) ? navigator.userAgent : 'Node.js',
+      url: (typeof window !== 'undefined' && window.location) ? window.location.href : 'electron://app'
     }
 
     this.logs.unshift(entry)
@@ -105,7 +110,9 @@ class ErrorLogger {
    */
   private saveToLocalStorage() {
     try {
-      localStorage.setItem('app_error_logs', JSON.stringify(this.logs))
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('app_error_logs', JSON.stringify(this.logs))
+      }
     } catch (error) {
       console.error('Failed to save logs to localStorage:', error)
     }
@@ -116,9 +123,11 @@ class ErrorLogger {
    */
   loadFromLocalStorage() {
     try {
-      const saved = localStorage.getItem('app_error_logs')
-      if (saved) {
-        this.logs = JSON.parse(saved)
+      if (typeof localStorage !== 'undefined') {
+        const saved = localStorage.getItem('app_error_logs')
+        if (saved) {
+          this.logs = JSON.parse(saved)
+        }
       }
     } catch (error) {
       console.error('Failed to load logs from localStorage:', error)
@@ -153,20 +162,24 @@ export const errorLogger = new ErrorLogger()
 errorLogger.loadFromLocalStorage()
 
 // 捕获全局未处理的错误
-window.addEventListener('error', (event) => {
-  errorLogger.error('global', `Global error: ${event.message}`, event.error, {
-    filename: event.filename,
-    lineno: event.lineno,
-    colno: event.colno
+if (typeof window !== 'undefined' && window) {
+  window.addEventListener('error', (event: any) => {
+    errorLogger.error('global', `Global error: ${event.message}`, event.error, {
+      filename: event.filename,
+      lineno: event.lineno,
+      colno: event.colno
+    })
   })
-})
+}
 
 // 捕获Promise的未处理拒绝
-window.addEventListener('unhandledrejection', (event) => {
-  errorLogger.error('global', `Unhandled promise rejection: ${event.reason}`, undefined, {
-    reason: event.reason
+if (typeof window !== 'undefined' && window) {
+  window.addEventListener('unhandledrejection', (event: any) => {
+    errorLogger.error('global', `Unhandled promise rejection: ${event.reason}`, undefined, {
+      reason: event.reason
+    })
   })
-})
+}
 
 /**
  * 工具函数：包装异步函数以自动记录错误

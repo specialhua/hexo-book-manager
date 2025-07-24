@@ -3,7 +3,7 @@
  */
 
 import { parseExistingBooks, type OriginalFileStructure, validateBookData } from './bookParser'
-import { storage } from './browserAPI'
+import { configAPI } from './configAPI'
 import type { Book } from '../types'
 
 export interface BlogConfig {
@@ -65,31 +65,96 @@ export class VersionSyncManager {
   }
   
   /**
-   * 获取博客配置
+   * 获取博客配置（异步方法）
    */
-  getBlogConfig(): BlogConfig | null {
-    return storage.load<BlogConfig>('blogConfig', null)
+  async getBlogConfig(): Promise<BlogConfig | null> {
+    try {
+      const syncConfig = await configAPI.getSyncConfig()
+      if (!syncConfig) {
+        return null
+      }
+      
+      return {
+        blogPath: syncConfig.blogPath,
+        lastSyncTime: syncConfig.lastSyncTime,
+        cacheVersion: syncConfig.cacheVersion,
+        autoVersionCheck: syncConfig.autoVersionCheck
+      }
+    } catch (error) {
+      console.error('获取博客配置失败:', error)
+      return null
+    }
   }
   
   /**
-   * 设置博客配置
+   * 设置博客配置（异步方法）
    */
-  setBlogConfig(config: BlogConfig): void {
-    storage.save('blogConfig', config)
+  async setBlogConfig(config: BlogConfig): Promise<void> {
+    try {
+      const syncConfig = {
+        blogPath: config.blogPath,
+        lastSyncTime: config.lastSyncTime,
+        cacheVersion: config.cacheVersion,
+        autoVersionCheck: config.autoVersionCheck ?? true
+      }
+      
+      const success = await configAPI.saveSyncConfig(syncConfig)
+      if (!success) {
+        throw new Error('保存同步配置失败')
+      }
+    } catch (error) {
+      console.error('保存博客配置失败:', error)
+      throw error
+    }
   }
   
   /**
-   * 清除博客配置
+   * 清除博客配置（异步方法）
    */
-  clearBlogConfig(): void {
-    storage.remove('blogConfig')
+  async clearBlogConfig(): Promise<void> {
+    try {
+      // 重置为默认配置
+      const defaultSyncConfig = {
+        blogPath: '',
+        lastSyncTime: 0,
+        cacheVersion: '',
+        autoVersionCheck: true
+      }
+      
+      const success = await configAPI.saveSyncConfig(defaultSyncConfig)
+      if (!success) {
+        throw new Error('清除同步配置失败')
+      }
+    } catch (error) {
+      console.error('清除博客配置失败:', error)
+      throw error
+    }
+  }
+
+  /**
+   * 重置版本同步管理器到初始状态
+   * 用于应用重置时清理所有状态
+   */
+  async reset(): Promise<void> {
+    try {
+      // 清除博客配置
+      await this.clearBlogConfig()
+      
+      // 清除任何内部状态（如果有的话）
+      // 当前实现中主要状态都存储在configAPI中，所以这里主要是清除配置
+      
+      console.log('VersionSyncManager已重置到初始状态')
+    } catch (error) {
+      console.error('重置VersionSyncManager失败:', error)
+      throw error
+    }
   }
   
   /**
-   * 检查是否为初次启动
+   * 检查是否为初次启动（异步方法）
    */
-  isFirstTimeUser(): boolean {
-    const config = this.getBlogConfig()
+  async isFirstTimeUser(): Promise<boolean> {
+    const config = await this.getBlogConfig()
     return !config || !config.blogPath
   }
   
@@ -104,7 +169,7 @@ export class VersionSyncManager {
     }
     
     // 生成基于当前缓存数据的版本标识
-    const initialCacheVersion = this.generateCacheVersion()
+    const initialCacheVersion = await this.generateCacheVersion()
     
     const config: BlogConfig = {
       blogPath: path,
@@ -113,7 +178,7 @@ export class VersionSyncManager {
       autoVersionCheck: true  // 默认启用自动版本检查
     }
     
-    this.setBlogConfig(config)
+    await this.setBlogConfig(config)
   }
   
   /**
@@ -303,7 +368,7 @@ export class VersionSyncManager {
   }
 
   /**
-   * 比较两个书籍数组的内容差异
+   * 比较两个书籍数组的内容差异 - 简化版本，参照GitHub版本的逻辑
    */
   private compareBookContents(cacheBooks: Book[], blogBooks: Book[]): ContentDifference[] {
     const differences: ContentDifference[] = []
@@ -312,7 +377,7 @@ export class VersionSyncManager {
     const cleanedCacheResult = this.validateAndCleanBooks(cacheBooks)
     const cleanedBlogResult = this.validateAndCleanBooks(blogBooks)
     
-    // 如果有验证警告，记录到差异中
+    // 记录验证警告
     if (cleanedCacheResult.warnings.length > 0) {
       differences.push({
         type: 'validation_warning',
@@ -337,78 +402,74 @@ export class VersionSyncManager {
     const cleanedCacheBooks = cleanedCacheResult.books
     const cleanedBlogBooks = cleanedBlogResult.books
     
-    // 1. 比较书籍数量
-    if (cleanedCacheBooks.length !== cleanedBlogBooks.length) {
-      differences.push({
-        type: cleanedCacheBooks.length > cleanedBlogBooks.length ? 'added' : 'removed',
-        field: 'book_count',
-        oldValue: cleanedBlogBooks.length,
-        newValue: cleanedCacheBooks.length,
-        description: `书籍数量变化：${cleanedBlogBooks.length} → ${cleanedCacheBooks.length}`
-      })
-    }
-    
-    // 2. 检查新增的书籍
+    // 1. 简化的新增检测：缓存中有但博客中没有的书籍
     cleanedCacheBooks.forEach(cacheBook => {
-      const blogBook = this.findMatchingBook(cacheBook, cleanedBlogBooks)
-      if (!blogBook) {
+      // 使用简单的标题+作者匹配，避免复杂的智能匹配
+      const existsInBlog = cleanedBlogBooks.some(blogBook => 
+        blogBook.title === cacheBook.title && blogBook.author === cacheBook.author
+      )
+      
+      if (!existsInBlog) {
         differences.push({
           type: 'added',
           field: 'book',
           newValue: cacheBook,
           bookId: cacheBook.id,
           bookTitle: cacheBook.title,
-          description: `新增书籍：${cacheBook.title}`
+          description: `新增书籍：《${cacheBook.title}》`
         })
       }
     })
     
-    // 3. 检查删除的书籍
+    // 2. 简化的删除检测：博客中有但缓存中没有的书籍
     cleanedBlogBooks.forEach(blogBook => {
-      const cacheBook = this.findMatchingBook(blogBook, cleanedCacheBooks)
-      if (!cacheBook) {
+      const existsInCache = cleanedCacheBooks.some(cacheBook => 
+        cacheBook.title === blogBook.title && cacheBook.author === blogBook.author
+      )
+      
+      if (!existsInCache) {
         differences.push({
           type: 'removed',
           field: 'book',
           oldValue: blogBook,
           bookId: blogBook.id,
           bookTitle: blogBook.title,
-          description: `删除书籍：${blogBook.title}`
+          description: `删除书籍：《${blogBook.title}》`
         })
       }
     })
     
-    // 4. 检查修改的书籍
+    // 3. 简化的修改检测：相同书籍的字段变化
     cleanedCacheBooks.forEach(cacheBook => {
-      const blogBook = this.findMatchingBook(cacheBook, cleanedBlogBooks)
+      const blogBook = cleanedBlogBooks.find(b => 
+        b.title === cacheBook.title && b.author === cacheBook.author
+      )
+      
       if (blogBook) {
-        // 比较关键字段 - 只比较MD文件中实际存储的字段
-        const fieldsToCompare = ['title', 'author', 'description', 'download_link', 'extract_code', 'cover', 'douban_url', 'publish_date']
+        // 比较关键字段
+        const fieldsToCompare = ['description', 'download_link', 'extract_code', 'cover', 'douban_url', 'publish_date']
         
         fieldsToCompare.forEach(field => {
-          const cacheValue = cacheBook[field as keyof Book]
-          const blogValue = blogBook[field as keyof Book]
+          const cacheValue = this.normalizeFieldValue(cacheBook[field as keyof Book], field)
+          const blogValue = this.normalizeFieldValue(blogBook[field as keyof Book], field)
           
-          // 改进的空值处理和标准化
-          const normalizedCacheValue = this.normalizeFieldValue(cacheValue, field)
-          const normalizedBlogValue = this.normalizeFieldValue(blogValue, field)
-          
-          if (normalizedCacheValue !== normalizedBlogValue) {
+          // 只有真正不同的值才记录差异
+          if (cacheValue !== blogValue && !(cacheValue === '' && blogValue === '')) {
             differences.push({
               type: 'modified',
               field,
-              oldValue: normalizedBlogValue,
-              newValue: normalizedCacheValue,
+              oldValue: blogValue,
+              newValue: cacheValue,
               bookId: cacheBook.id,
               bookTitle: cacheBook.title,
-              description: `${cacheBook.title} 的 ${field} 被修改`
+              description: `《${cacheBook.title}》的${field}被修改`
             })
           }
         })
       }
     })
     
-    // 5. 检查排序变化 - 使用智能匹配
+    // 4. 简化的排序检测：只在数量相同时检查
     if (cleanedCacheBooks.length === cleanedBlogBooks.length && cleanedCacheBooks.length > 0) {
       let orderChanged = false
       
@@ -416,10 +477,8 @@ export class VersionSyncManager {
         const cacheBook = cleanedCacheBooks[i]
         const blogBook = cleanedBlogBooks[i]
         
-        // 使用智能匹配判断是否为同一本书
-        const isSameBook = this.findMatchingBook(cacheBook, [blogBook]) !== null
-        
-        if (!isSameBook) {
+        // 简单检查：位置相同的书籍是否是同一本书
+        if (cacheBook.title !== blogBook.title || cacheBook.author !== blogBook.author) {
           orderChanged = true
           break
         }
@@ -429,11 +488,22 @@ export class VersionSyncManager {
         differences.push({
           type: 'reordered',
           field: 'book_order',
-          oldValue: blogBooks.map(b => ({ id: b.id, title: b.title })),
-          newValue: cacheBooks.map(b => ({ id: b.id, title: b.title })),
+          oldValue: cleanedBlogBooks.map(b => ({ id: b.id, title: b.title })),
+          newValue: cleanedCacheBooks.map(b => ({ id: b.id, title: b.title })),
           description: '书籍排序发生变化'
         })
       }
+    }
+    
+    // 5. 记录数量变化（如果有的话）
+    if (cleanedCacheBooks.length !== cleanedBlogBooks.length) {
+      differences.push({
+        type: cleanedCacheBooks.length > cleanedBlogBooks.length ? 'added' : 'removed',
+        field: 'book_count',
+        oldValue: cleanedBlogBooks.length,
+        newValue: cleanedCacheBooks.length,
+        description: `书籍数量变化：${cleanedBlogBooks.length} → ${cleanedCacheBooks.length}`
+      })
     }
     
     return differences
@@ -497,10 +567,10 @@ export class VersionSyncManager {
   }
   
   /**
-   * 比较版本 - 基于内容而非时间
+   * 比较版本 - 基于内容而非时间，增强冲突检测准确性
    */
   async compareVersions(): Promise<VersionCompareResult | null> {
-    const config = this.getBlogConfig()
+    const config = await this.getBlogConfig()
     if (!config) {
       return null
     }
@@ -512,14 +582,26 @@ export class VersionSyncManager {
         return null
       }
       
-      // 获取缓存数据
-      const cacheBooks = storage.load<Book[]>('books', []) || []
-      const cacheStructure = storage.load<OriginalFileStructure>('originalFileStructure', null)
+      // 获取缓存数据 - 使用configAPI
+      let cacheBooks: Book[] = []
+      let cacheStructure: OriginalFileStructure | null = null
+      
+      try {
+        const booksData = await configAPI.getBooksData()
+        if (booksData) {
+          cacheBooks = booksData.books || []
+          cacheStructure = booksData.originalFileStructure || null
+        }
+      } catch (error) {
+        console.error('从configAPI获取缓存数据失败:', error)
+        cacheBooks = []
+        cacheStructure = null
+      }
       
       // 生成当前缓存的版本标识
-      const currentCacheVersion = this.generateCacheVersion()
-      console.log('🔍 当前缓存版本标识:', currentCacheVersion)
-      console.log('🔍 配置中的版本标识:', config.cacheVersion)
+      const currentCacheVersion = await this.generateCacheVersion()
+      console.log('🔍 当前持久化存储版本标识:', currentCacheVersion)
+      console.log('🔍 配置中记录的版本标识:', config.cacheVersion)
       
       // 读取博客文件内容
       let blogContent: string
@@ -556,48 +638,44 @@ export class VersionSyncManager {
         sort_order: index
       }))
       
-      // 直接计算博客数据的版本标识，不需要临时保存到 localStorage
-      const blogVersionIdentifier = this.generateVersionIdentifier(blogBooksSorted, blogStructure)
+      // 直接计算博客数据的版本标识
+      const blogVersionIdentifier = await this.generateVersionIdentifier(blogBooksSorted, blogStructure)
       
       console.log('🔍 博客内容对应的版本标识:', blogVersionIdentifier)
       
-      // 如果版本标识相同，说明内容一致，无需冲突
-      if (currentCacheVersion === blogVersionIdentifier) {
-        console.log('✅ 版本标识匹配，无冲突')
-        return {
-          hasConflict: false,
-          isConflict: false,
-          cacheNewer: false,
-          blogNewer: false,
-          cacheBooksCount: cacheBooks.length,
-          blogBooksCount: blogBooks.length,
-          cacheModifiedTime: Date.now(),
-          blogModifiedTime: blogFileInfo.modifiedTime,
-          differences: [],
-          conflictType: 'none'
+      // 简化的冲突检测逻辑 - 参照GitHub版本的简单判断
+      const differences = this.compareAllContent(cacheBooks, blogBooks, cacheStructure, blogStructure)
+      console.log('🔍 检测到的差异数量:', differences.length)
+      
+      // 过滤掉无关紧要的差异，但保留所有有意义的变更
+      const meaningfulDifferences = differences.filter(diff => {
+        // 保留所有类型的差异，只过滤掉验证警告中的无关内容
+        if (diff.type === 'validation_warning') {
+          return false // 验证警告不影响冲突判断
         }
+        return true // 保留所有其他类型的差异
+      })
+      console.log('🔍 有意义的差异数量:', meaningfulDifferences.length)
+      
+      // 简化的冲突检测：有任何有意义的差异就是冲突
+      const hasConflict = meaningfulDifferences.length > 0
+      
+      console.log(`🔍 冲突检测结果: ${hasConflict ? '存在冲突' : '无冲突'}`)
+      if (hasConflict) {
+        console.log('🔍 差异列表:', meaningfulDifferences.map(d => `${d.type}: ${d.description || d.field}`))
       }
       
-      // 版本标识不同，进行详细的内容比较
-      console.log('🔍 检测到版本差异，进行详细比较')
-      
-      // 比较内容差异
-      const differences = this.compareAllContent(cacheBooks, blogBooks, cacheStructure, blogStructure)
-      const hasConflict = differences.length > 0
-      
-      console.log('🔍 差异数量:', differences.length)
-      
-      // 构建比较结果
+      // 构建比较结果 - 使用过滤后的有意义差异
       const result: VersionCompareResult = {
         hasConflict,
         isConflict: hasConflict,
-        cacheNewer: true,
+        cacheNewer: true, // 假设持久化数据更新
         blogNewer: false,
         cacheBooksCount: cacheBooks.length,
         blogBooksCount: blogBooks.length,
         cacheModifiedTime: Date.now(),
         blogModifiedTime: blogFileInfo.modifiedTime,
-        differences,
+        differences: meaningfulDifferences, // 只返回有意义的差异
         conflictType: hasConflict ? 'content' : 'none'
       }
       
@@ -669,7 +747,7 @@ export class VersionSyncManager {
    * 从博客文件同步到缓存
    */
   async syncFromBlog(): Promise<Book[]> {
-    const config = this.getBlogConfig()
+    const config = await this.getBlogConfig()
     if (!config) {
       throw new Error('博客配置不存在')
     }
@@ -689,7 +767,7 @@ export class VersionSyncManager {
       }
       
       // 解析博客文件
-      const currentBooks = storage.load<Book[]>('books', [])
+      const currentBooks = await this.getCurrentBooksFromStorage()
       const parseResult = parseExistingBooks(blogContent, currentBooks || [])
       
       if (!parseResult.books || parseResult.books.length === 0) {
@@ -710,24 +788,22 @@ export class VersionSyncManager {
       }))
       
       // 创建备份（保存当前缓存）
-      const existingBooks = storage.load<Book[]>('books', [])
-      if (existingBooks && existingBooks.length > 0) {
-        const backupKey = `books_backup_${Date.now()}`
-        storage.save(backupKey, existingBooks)
-      }
+      await this.createBooksBackup()
       
       // 更新缓存
-      storage.save('books', booksWithOrder)
-      storage.save('originalFileOrder', booksWithOrder)
-      storage.save('originalFileStructure', parseResult.structure)
-      storage.save('currentFile', {
-        fileName: config.blogPath.split('/').pop() || 'index.md',
-        filePath: config.blogPath
-      })
+      await this.saveBooksToStorage(
+        booksWithOrder,
+        booksWithOrder,
+        parseResult.structure,
+        {
+          fileName: config.blogPath.split('/').pop() || 'index.md',
+          filePath: config.blogPath
+        }
+      )
       
       // 在同步后生成版本标识，确保它反映更新后的缓存数据
-      const updatedCacheVersion = this.generateCacheVersion()
-      console.log('📤 从博客同步后的缓存版本标识:', updatedCacheVersion)
+      const updatedCacheVersion = await this.generateCacheVersion()
+      console.log('📤 从博客同步后的持久化存储版本标识:', updatedCacheVersion)
       
       // 更新博客配置
       const newConfig: BlogConfig = {
@@ -735,7 +811,7 @@ export class VersionSyncManager {
         lastSyncTime: Date.now(),
         cacheVersion: updatedCacheVersion
       }
-      this.setBlogConfig(newConfig)
+      await this.setBlogConfig(newConfig)
       
       return booksWithOrder
       
@@ -749,15 +825,15 @@ export class VersionSyncManager {
    * 从缓存同步到博客文件
    */
   async syncToBlob(createBackup: boolean = true): Promise<boolean> {
-    const config = this.getBlogConfig()
+    const config = await this.getBlogConfig()
     if (!config) {
       console.error('📤 博客配置不存在')
       return false
     }
     
     // 在同步前生成版本标识，确保它反映当前缓存数据
-    const currentCacheVersion = this.generateCacheVersion()
-    console.log('📤 当前缓存版本标识:', currentCacheVersion)
+    const currentCacheVersion = await this.generateCacheVersion()
+    console.log('📤 当前持久化存储版本标识:', currentCacheVersion)
     
     // 开始从缓存同步到博客文件
     
@@ -771,9 +847,8 @@ export class VersionSyncManager {
         let maxBackups = 10 // 默认值
         
         try {
-          const savedSettings = localStorage.getItem('appSettings')
-          if (savedSettings) {
-            const settings = JSON.parse(savedSettings)
+          const settings = await configAPI.getSettings()
+          if (settings) {
             backupFolderPath = settings.backup?.folderPath
             maxBackups = settings.backup?.maxBackups || 10
           }
@@ -806,8 +881,20 @@ export class VersionSyncManager {
       }
       
       // 获取缓存数据
-      const cacheBooks = storage.load<Book[]>('books', []) || []
-      const originalFileStructure = storage.load<OriginalFileStructure>('originalFileStructure', null)
+      let cacheBooks: Book[] = []
+      let originalFileStructure: OriginalFileStructure | null = null
+      
+      try {
+        const booksData = await configAPI.getBooksData()
+        if (booksData) {
+          cacheBooks = booksData.books || []
+          originalFileStructure = booksData.originalFileStructure || null
+        }
+      } catch (error) {
+        console.error('从configAPI获取数据失败:', error)
+        // 直接返回错误，不再降级到localStorage
+        return false
+      }
       
       // 详细记录文件结构信息
       if (originalFileStructure) {
@@ -878,7 +965,7 @@ export class VersionSyncManager {
               lastSyncTime: Date.now(),
               cacheVersion: currentCacheVersion
             }
-            this.setBlogConfig(newConfig)
+            await this.setBlogConfig(newConfig)
             
             console.log('📤 博客配置更新成功')
             return true
@@ -1010,36 +1097,89 @@ export class VersionSyncManager {
       return true // 没有内容冲突，无需同步
     }
     
-    // 默认使用缓存版本同步到博客
+    // 默认使用持久化存储版本同步到博客
     return await this.syncToBlob(true)
   }
   
   /**
-   * 生成版本标识
-   * 基于指定的数据内容生成，确保相同内容产生相同的版本标识
+   * 计算文件结构的简化哈希值
    */
-  private generateVersionIdentifier(books?: Book[], structure?: OriginalFileStructure | null): string {
-    // 如果没有传入参数，使用当前缓存数据
-    const targetBooks = books || (storage.load<Book[]>('books', []) || [])
-    const targetStructure = structure !== undefined ? structure : storage.load<OriginalFileStructure>('originalFileStructure', null)
+  private calculateStructureHash(structure: OriginalFileStructure): number {
+    const structureString = JSON.stringify({
+      hasCustomContent: structure.hasCustomContent,
+      headerLength: structure.header?.length || 0,
+      footerLength: structure.footer?.length || 0,
+      // 只计算长度，避免包含完整内容影响性能
+    })
     
-    // 创建内容摘要字符串
-    const contentSummary = {
-      books: targetBooks.map(book => ({
-        id: book.id,
-        title: book.title,
-        author: book.author,
-        isbn: book.isbn,
-        description: book.description,
-        download_link: book.download_link,
-        extract_code: book.extract_code,
-        sort_order: book.sort_order
-      })),
-      hasCustomContent: targetStructure?.hasCustomContent || false,
-      bookCount: targetBooks.length
+    let hash = 0
+    for (let i = 0; i < structureString.length; i++) {
+      const char = structureString.charCodeAt(i)
+      hash = ((hash << 5) - hash) + char
+      hash = hash & hash
+    }
+    return hash
+  }
+
+  /**
+   * 生成版本标识 - 简化版本，基于核心内容生成简单哈希
+   * 参照GitHub版本的简单逻辑，确保相同内容产生相同版本标识
+   */
+  private async generateVersionIdentifier(books?: Book[], structure?: OriginalFileStructure | null): Promise<string> {
+    // 如果没有传入参数，使用当前缓存数据
+    let targetBooks = books
+    let targetStructure = structure
+    
+    if (!targetBooks) {
+      // 使用configAPI获取当前缓存数据
+      try {
+        const booksData = await configAPI.getBooksData()
+        if (booksData) {
+          targetBooks = booksData.books || []
+        } else {
+          targetBooks = []
+        }
+      } catch (error) {
+        console.error('获取books数据失败:', error)
+        targetBooks = []
+      }
     }
     
-    // 将内容转换为JSON字符串并生成简单的哈希值
+    if (structure === undefined) {
+      try {
+        const booksData = await configAPI.getBooksData()
+        if (booksData) {
+          targetStructure = booksData.originalFileStructure || null
+        } else {
+          targetStructure = null
+        }
+      } catch (error) {
+        console.error('获取结构数据失败:', error)
+        targetStructure = null
+      }
+    }
+    
+    // 简化版本标识：只基于核心内容
+    const contentSummary = {
+      // 只包含影响最终输出的核心字段
+      books: targetBooks.map((book, index) => ({
+        title: book.title || '',
+        author: book.author || '',
+        description: book.description || '',
+        download_link: book.download_link || '',
+        extract_code: book.extract_code || '',
+        cover: book.cover || '',
+        douban_url: book.douban_url || '',
+        publish_date: book.publish_date || '',
+        isbn: book.isbn || '',
+        position: index // 保留位置信息以检测排序变化
+      })),
+      bookCount: targetBooks.length,
+      // 文件结构的简化表示
+      hasCustomContent: targetStructure?.hasCustomContent || false
+    }
+    
+    // 生成简单哈希
     const contentString = JSON.stringify(contentSummary)
     let hash = 0
     for (let i = 0; i < contentString.length; i++) {
@@ -1048,85 +1188,120 @@ export class VersionSyncManager {
       hash = hash & hash // 转换为32位整数
     }
     
-    // 生成基于内容的版本标识
-    return `v${Math.abs(hash)}-${contentSummary.bookCount}`
+    // 生成简化的版本标识
+    return `${Math.abs(hash).toString(36)}-${contentSummary.bookCount}`
   }
   
   /**
-   * 生成缓存版本标识
-   * 基于当前缓存数据内容生成，确保相同内容产生相同的版本标识
+   * 生成持久化存储版本标识
+   * 基于当前持久化存储数据内容生成，确保相同内容产生相同的版本标识
    */
-  private generateCacheVersion(): string {
-    return this.generateVersionIdentifier()
+  private async generateCacheVersion(): Promise<string> {
+    return await this.generateVersionIdentifier()
   }
   
   /**
-   * 获取当前缓存版本标识
+   * 获取当前持久化存储版本标识
    */
-  getCurrentCacheVersion(): string {
-    return this.generateCacheVersion()
+  async getCurrentCacheVersion(): Promise<string> {
+    return await this.generateCacheVersion()
   }
   
   /**
-   * 检测数据一致性和恢复
+   * 从存储获取当前书籍数据（优先使用configAPI）
    */
+  private async getCurrentBooksFromStorage(): Promise<Book[]> {
+    try {
+      const booksData = await configAPI.getBooksData()
+      return booksData?.books || []
+    } catch (error) {
+      console.error('从configAPI获取书籍失败:', error)
+      return []
+    }
+  }
+
+  /**
+   * 保存书籍数据到存储（使用configAPI）
+   */
+  private async saveBooksToStorage(books: Book[], originalFileOrder?: Book[], originalFileStructure?: OriginalFileStructure | null, currentFile?: any): Promise<void> {
+    try {
+      const booksData = {
+        books,
+        originalFileOrder: originalFileOrder || [],
+        originalFileStructure: originalFileStructure || null,
+        currentFile: currentFile || null
+      }
+      
+      const success = await configAPI.saveBooksData(booksData)
+      if (!success) {
+        throw new Error('configAPI保存失败')
+      }
+    } catch (error) {
+      console.error('保存书籍数据失败:', error)
+      throw error
+    }
+  }
+
+  /**
+   * 创建书籍数据备份（使用configAPI）
+   */
+  private async createBooksBackup(): Promise<void> {
+    try {
+      const existingBooks = await this.getCurrentBooksFromStorage()
+      if (existingBooks && existingBooks.length > 0) {
+        // 备份功能由configAPI内部的文件系统备份机制处理
+        // 不再使用localStorage创建临时备份
+        console.log('书籍数据备份由配置系统自动处理')
+      }
+    } catch (error) {
+      console.error('获取备份数据失败:', error)
+    }
+  }
   async detectDataLoss(): Promise<{
     hasDataLoss: boolean
     recoveryOptions: string[]
     backupBooks: Book[]
   }> {
-    // 数据一致性检测
-    const currentBooks = storage.load<Book[]>('books', [])
-    const backupKeys = storage.getAllKeys().filter(key => key.startsWith('books_backup_'))
-    
-    // 如果没有当前数据但有备份数据，可能发生了数据丢失
-    if ((currentBooks?.length || 0) === 0 && backupKeys.length > 0) {
-      // 找到最新的备份
-      const latestBackupKey = backupKeys.sort().pop()
-      if (latestBackupKey) {
-        const backupBooks = storage.load<Book[]>(latestBackupKey, [])
-        if (backupBooks && backupBooks.length > 0) {
-          return {
-            hasDataLoss: true,
-            recoveryOptions: ['restore_from_backup', 'ignore'],
-            backupBooks: backupBooks || []
-          }
+    // 数据一致性检测已由configAPI的原生备份机制处理
+    // 不再依赖localStorage的临时备份
+    try {
+      const currentBooks = await this.getCurrentBooksFromStorage()
+      
+      // 如果没有当前数据，可能需要检查原生备份
+      if ((currentBooks?.length || 0) === 0) {
+        return {
+          hasDataLoss: true,
+          recoveryOptions: ['check_native_backups'],
+          backupBooks: []
         }
       }
-    }
-    
-    return {
-      hasDataLoss: false,
-      recoveryOptions: [],
-      backupBooks: []
+      
+      return {
+        hasDataLoss: false,
+        recoveryOptions: [],
+        backupBooks: []
+      }
+    } catch (error) {
+      console.error('数据丢失检测失败:', error)
+      return {
+        hasDataLoss: false,
+        recoveryOptions: [],
+        backupBooks: []
+      }
     }
   }
   
   /**
    * 恢复数据
    */
-  async recoverData(option: 'restore_from_backup' | 'ignore'): Promise<boolean> {
-    if (option === 'restore_from_backup') {
-      const backupKeys = storage.getAllKeys().filter(key => key.startsWith('books_backup_'))
-      if (backupKeys.length === 0) {
-        return false
-      }
-      
-      const latestBackupKey = backupKeys.sort().pop()
-      if (!latestBackupKey) {
-        return false
-      }
-      
-      const backupBooks = storage.load<Book[]>(latestBackupKey, [])
-      if (!backupBooks || backupBooks.length === 0) {
-        return false
-      }
-      
-      // 恢复数据
-      const success = storage.save('books', backupBooks)
-      if (success) {
-        return true
-      }
+  async recoverData(option: 'restore_from_backup' | 'ignore' | 'check_native_backups'): Promise<boolean> {
+    if (option === 'check_native_backups') {
+      // 检查configAPI是否有原生备份可用
+      // 这个功能需要扩展configAPI接口来支持备份恢复
+      console.log('检查原生备份功能需要进一步实现')
+      return false
+    } else if (option === 'ignore') {
+      return true
     }
     
     return false

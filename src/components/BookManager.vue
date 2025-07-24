@@ -134,7 +134,7 @@
             <template #icon>
               <n-icon><RefreshIcon /></n-icon>
             </template>
-            清除缓存
+            重置应用
           </n-button>
         </n-space>
         
@@ -466,6 +466,7 @@ import type { ImageBedConfig } from '../utils/imageBed'
 import { loadDemoData } from '../utils/demoLoader'
 import { useVersionCheck } from '../composables/useVersionCheck'
 import { useFirstTimeSetup } from '../composables/useFirstTimeSetup'
+import { configAPI } from '../utils/configAPI'
 
 // 接收图床配置和ISBN API配置
 const props = defineProps<{
@@ -522,12 +523,16 @@ const {
   checkIfFirstTimeUser,
   handleFirstTimeSetupCompleted: handleFirstTimeSetupCompletedCore
 } = useFirstTimeSetup({
-  onDataLoaded: (loadedBooks, loadedFile) => {
+  onDataLoaded: async (loadedBooks, loadedFile) => {
     // 数据加载回调
     books.value = loadedBooks
     currentFile.value = loadedFile
     originalFileOrder.value = loadedBooks
-    originalFileStructure.value = storage.load<OriginalFileStructure>('originalFileStructure', null)
+    // 从configAPI获取文件结构信息
+    const booksData = await configAPI.getBooksData()
+    if (booksData) {
+      originalFileStructure.value = booksData.originalFileStructure || null
+    }
   }
 })
 
@@ -674,10 +679,10 @@ const loadAllBooks = () => {
 }
 
 // 刷新设置 - 立即应用用户在设置界面的更改
-const refreshSettings = () => {
+const refreshSettings = async () => {
   try {
-    // 从本地存储读取最新的应用设置
-    const savedSettings = storage.load('appSettings', null)
+    // 从configAPI读取最新的应用设置
+    const savedSettings = await configAPI.getSettings()
     
     if (!savedSettings) {
       message.info('未找到设置配置，使用默认配置')
@@ -772,11 +777,30 @@ const handleLoadModeChange = (oldMode: string, newMode: string) => {
 const loadBooks = async () => {
   loading.value = true
   try {
-    // 优先从本地存储加载用户的最新数据（修复数据持久化问题）
-    const savedBooks = storage.load<Book[]>('books', [])
-    const savedOriginalOrder = storage.load<Book[]>('originalFileOrder', [])
-    const savedOriginalStructure = storage.load<OriginalFileStructure | null>('originalFileStructure', null)
-    const savedFile = storage.load<{ fileName: string; filePath: string } | null>('currentFile', null)
+    // 检查是否为重置状态
+    const isReset = configAPI.isResetState()
+    if (isReset) {
+      console.log('检测到重置状态，跳过数据加载，等待首次设置')
+      loading.value = false
+      // 清除重置标记，避免重复检测
+      configAPI.clearResetFlag()
+      return
+    }
+    
+    // 使用configAPI获取数据
+    const booksData = await configAPI.getBooksData()
+    
+    let savedBooks: Book[] = []
+    let savedOriginalOrder: Book[] = []
+    let savedOriginalStructure: OriginalFileStructure | null = null
+    let savedFile: { fileName: string; filePath: string } | null = null
+    
+    if (booksData) {
+      savedBooks = booksData.books || []
+      savedOriginalOrder = booksData.originalFileOrder || []
+      savedOriginalStructure = booksData.originalFileStructure || null
+      savedFile = booksData.currentFile || null
+    }
     
     // 数据恢复检测
     if (savedBooks.length === 0) {
@@ -795,9 +819,9 @@ const loadBooks = async () => {
           if (recoverySuccess) {
             message.success('数据恢复成功！')
             // 重新加载恢复的数据
-            const recoveredBooks = storage.load<Book[]>('books', [])
-            if (recoveredBooks.length > 0) {
-              books.value = recoveredBooks.sort((a, b) => {
+            const recoveredData = await configAPI.getBooksData()
+            if (recoveredData && recoveredData.books && recoveredData.books.length > 0) {
+              books.value = recoveredData.books.sort((a, b) => {
                 if (a.sort_order !== undefined && b.sort_order !== undefined) {
                   return a.sort_order - b.sort_order
                 }
@@ -805,9 +829,9 @@ const loadBooks = async () => {
                 if (b.sort_order !== undefined) return 1
                 return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
               })
-              originalFileOrder.value = savedOriginalOrder
-              originalFileStructure.value = savedOriginalStructure
-              currentFile.value = savedFile
+              originalFileOrder.value = recoveredData.originalFileOrder || []
+              originalFileStructure.value = recoveredData.originalFileStructure || null
+              currentFile.value = recoveredData.currentFile || null
               
               message.success(`数据恢复完成，恢复了 ${books.value.length} 本书籍`)
               
@@ -840,7 +864,7 @@ const loadBooks = async () => {
       currentFile.value = savedFile
       
       // 检查版本状态 - 如果当前文件是博客文件，设置为已同步
-      const blogConfig = versionSyncManager.getBlogConfig()
+      const blogConfig = await versionSyncManager.getBlogConfig()
       blogConfigState.value = blogConfig // 更新响应式状态
       if (blogConfig && blogConfig.blogPath && currentFile.value && currentFile.value.filePath === blogConfig.blogPath) {
         setVersionStatus('synced')
@@ -859,10 +883,13 @@ const loadBooks = async () => {
         originalFileOrder.value = demoResult.books
         originalFileStructure.value = demoResult.originalFileStructure
         
-        // 保存示例数据到缓存
-        storage.save('books', demoResult.books)
-        storage.save('originalFileOrder', demoResult.books)
-        storage.save('originalFileStructure', demoResult.originalFileStructure)
+        // 保存示例数据到configAPI
+        await configAPI.saveBooksData({
+          books: demoResult.books,
+          originalFileOrder: demoResult.books,
+          originalFileStructure: demoResult.originalFileStructure,
+          currentFile: null
+        })
       } catch (error) {
         console.error('加载示例数据失败:', error)
         message.error('加载示例数据失败，请手动导入数据文件')
@@ -957,14 +984,16 @@ const loadFromFile = async () => {
     // 更新当前文件信息
     currentFile.value = { fileName, filePath }
     
-    // 保存到本地存储
-    storage.save('books', booksWithOrder)
-    storage.save('originalFileOrder', originalFileOrder.value)
-    storage.save('originalFileStructure', originalFileStructure.value)
-    storage.save('currentFile', currentFile.value)
+    // 保存到configAPI
+    await configAPI.saveBooksData({
+      books: booksWithOrder,
+      originalFileOrder: originalFileOrder.value,
+      originalFileStructure: originalFileStructure.value,
+      currentFile: currentFile.value
+    })
     
     // 如果配置了博客路径且刚从该文件加载，设置为已同步状态
-    const blogConfig = versionSyncManager.getBlogConfig()
+    const blogConfig = await versionSyncManager.getBlogConfig()
     if (blogConfig && blogConfig.blogPath && filePath === blogConfig.blogPath) {
       // 刚从博客文件加载，应该是同步状态
       setVersionStatus('synced')
@@ -990,9 +1019,23 @@ const loadFromFile = async () => {
   }
 }
 
-const saveBooks = () => {
+const saveBooks = async () => {
   try {
-    const success = storage.save('books', books.value)
+    // 创建干净的数据副本，确保所有数据都是可序列化的
+    const cleanBooks = JSON.parse(JSON.stringify(books.value))
+    const cleanOriginalFileOrder = JSON.parse(JSON.stringify(originalFileOrder.value))
+    const cleanOriginalFileStructure = originalFileStructure.value ? 
+      JSON.parse(JSON.stringify(originalFileStructure.value)) : null
+    const cleanCurrentFile = currentFile.value ? 
+      JSON.parse(JSON.stringify(currentFile.value)) : null
+    
+    const success = await configAPI.saveBooksData({
+      books: cleanBooks,
+      originalFileOrder: cleanOriginalFileOrder,
+      originalFileStructure: cleanOriginalFileStructure,
+      currentFile: cleanCurrentFile
+    })
+    
     if (!success) {
       console.error('书籍数据保存失败')
       message.error('书籍数据保存失败')
@@ -1003,7 +1046,7 @@ const saveBooks = () => {
     // 用户需要手动进行版本检查和确认
     
     // 如果配置了博客路径，更新版本状态为可能有冲突
-    notifyVersionStatusUpdate()
+    await notifyVersionStatusUpdate()
     
     return true
   } catch (error) {
@@ -1186,35 +1229,58 @@ const resetSortOrder = async () => {
   if (syncedBooks && syncedBooks.length > 0) {
     books.value = syncedBooks
     originalFileOrder.value = syncedBooks
-    originalFileStructure.value = storage.load<OriginalFileStructure>('originalFileStructure', null)
-    currentFile.value = storage.load<{ fileName: string; filePath: string }>('currentFile', null)
+    // 从configAPI获取文件结构和当前文件信息
+    const booksData = await configAPI.getBooksData()
+    if (booksData) {
+      originalFileStructure.value = booksData.originalFileStructure || null
+      currentFile.value = booksData.currentFile || null
+    }
   }
 }
 
-const clearAllCache = () => {
+const clearAllCache = async () => {
   // 显示确认对话框
-  const confirmed = window.confirm('确定要清除所有缓存数据吗？这将删除所有书籍数据、设置和历史记录。')
+  const confirmed = window.confirm('确定要重置应用数据吗？这将删除所有书籍数据、设置和历史记录，应用将恢复到首次打开的状态。')
   
   if (confirmed) {
     try {
-      // 清除所有localStorage数据
-      storage.clear()
+      // 使用统一的clearAllData方法清除所有配置数据
+      const result = await configAPI.clearAllData()
       
-      // 重置所有状态
-      books.value = []
-      originalFileOrder.value = []
-      originalFileStructure.value = null
-      currentFile.value = null
-      
-      message.success('缓存已清除，应用已重置为初始状态')
-      
-      // 重新加载页面以确保完全重置
-      setTimeout(() => {
-        location.reload()
-      }, 1000)
+      if (result.success) {
+        // 重置版本同步管理器状态
+        try {
+          await versionSyncManager.reset()
+        } catch (syncError) {
+          console.warn('重置版本同步管理器失败:', syncError)
+          // 不影响主要的重置流程
+        }
+        
+        // 重置所有状态变量
+        books.value = []
+        originalFileOrder.value = []
+        originalFileStructure.value = null
+        currentFile.value = null
+        
+        // 重置博客配置状态
+        blogConfigState.value = null
+        
+        // 重置版本状态
+        setVersionStatus('unknown')
+        
+        message.success('应用数据已重置，正在重新加载...')
+        
+        // 重新加载页面以确保完全重置
+        setTimeout(() => {
+          location.reload()
+        }, 1000)
+      } else {
+        console.error('重置应用数据失败:', result.error)
+        message.error(`重置应用数据失败: ${result.error}`)
+      }
     } catch (error) {
-      console.error('清除缓存失败:', error)
-      message.error('清除缓存失败')
+      console.error('重置应用数据失败:', error)
+      message.error('重置应用数据失败')
     }
   }
 }
@@ -1295,9 +1361,12 @@ const handleFirstTimeSetupCompleted = async (blogPath: string | null) => {
 
 
 
-onMounted(() => {
-  // 从本地存储读取应用设置
-  const savedSettings = storage.load('appSettings', null)
+onMounted(async () => {
+  // 初始化configAPI
+  await configAPI.initialize()
+  
+  // 从configAPI读取应用设置
+  const savedSettings = await configAPI.getSettings()
   if (savedSettings?.general?.defaultViewMode) {
     viewMode.value = savedSettings.general.defaultViewMode
   }

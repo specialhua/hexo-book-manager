@@ -4,6 +4,20 @@ import App from './App.vue'
 // 导入错误日志系统
 import './utils/errorLogger'
 
+// 导入并初始化配置系统
+import { configAPI } from './utils/configAPI'
+
+// 初始化配置系统（包括数据迁移）
+async function initializeApp() {
+  try {
+    console.log('正在初始化配置系统...')
+    await configAPI.initialize()
+    console.log('配置系统初始化完成')
+  } catch (error) {
+    console.error('配置系统初始化失败:', error)
+  }
+}
+
 // 按需导入 Naive UI 组件
 import {
   NConfigProvider,
@@ -84,4 +98,12 @@ app.component('NTooltip', NTooltip)
 app.component('NText', NText)
 app.component('NEllipsis', NEllipsis)
 
-app.mount('#app')
+// 初始化应用
+initializeApp().then(() => {
+  app.mount('#app')
+  console.log('应用启动完成')
+}).catch(error => {
+  console.error('应用初始化失败:', error)
+  // 即使初始化失败，也启动应用（降级模式）
+  app.mount('#app')
+})

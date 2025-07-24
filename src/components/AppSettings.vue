@@ -291,14 +291,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch, h, onUnmounted } from 'vue'
+import { ref, reactive, computed, watch, h, onMounted } from 'vue'
 import { useMessage } from 'naive-ui'
 import { type ImageBedConfig, ImageBedType } from '../utils/imageBed'
 import { getBackupHistory, type BackupInfo } from '../utils/backup'
 import { versionSyncManager } from '../utils/versionSync'
 import { parseExistingBooks } from '../utils/bookParser'
-import { storage } from '../utils/browserAPI'
+import { configAPI } from '../utils/configAPI'
 import { type IsbnApiConfig } from '../types'
+import type { AppSettings as AppSettingsType } from '../types/config'
 
 interface Props {
   imageBedConfig: ImageBedConfig
@@ -314,6 +315,9 @@ interface AppSettings {
     defaultViewMode: 'grid' | 'table'
     gridViewPageSize: number
     tableViewPageSize: number
+    gridLoadMode: 'pagination' | 'infinite'
+    infiniteScrollBatchSize: number
+    enableVirtualScroll: boolean
   }
   bookApi: {
     apiKey: string
@@ -379,8 +383,14 @@ const blogStatus = reactive({
   lastSync: 0
 })
 
-// 编辑状态跟踪
-const isEditing = ref(false)
+// 组件挂载时初始化设置
+onMounted(async () => {
+  // 初始化配置API
+  await configAPI.initialize()
+  
+  // 加载现有设置
+  await initializeSettings()
+})
 
 // InfoIcon 组件
 const InfoIcon = () => h('svg', {
@@ -430,27 +440,11 @@ watch(() => props.imageBedConfig, (newConfig) => {
   imageBedForm.config = { ...newConfig.config }
 }, { deep: true })
 
-// 监听表单变化，设置编辑状态
-watch([
-  () => generalForm.gridLoadMode,
-  () => generalForm.infiniteScrollBatchSize,
-  () => generalForm.defaultViewMode,
-  () => generalForm.gridViewPageSize,
-  () => generalForm.tableViewPageSize,
-  () => generalForm.enableVirtualScroll
-], () => {
-  isEditing.value = true
-}, { deep: true })
-
 // 监听对话框显示状态
 watch(show, (newShow) => {
   if (newShow) {
-    // 对话框打开时，重置编辑状态并同步一次最新设置
-    isEditing.value = false
+    // 对话框打开时，重新加载最新设置
     initializeSettings()
-  } else {
-    // 对话框关闭时，重置编辑状态
-    isEditing.value = false
   }
 })
 
@@ -629,20 +623,25 @@ const selectBlogPath = async () => {
       if (result.success && result.data) {
         const { content, fileName, filePath } = result.data
         
-        // 验证文件内容
-        const parseResult = parseExistingBooks(content)
-        if (parseResult.books.length === 0) {
-          message.warning('选择的文件中没有找到书籍数据')
+        // 验证文件内容 - 确保是有效的博客文件
+        try {
+          const parseResult = parseExistingBooks(content)
+          if (parseResult.books.length === 0) {
+            message.warning('选择的文件中没有找到书籍数据，请确认这是正确的博客文件')
+            return
+          }
+        } catch (error) {
+          message.error('文件格式不正确，无法解析为书籍数据')
           return
         }
         
+        // 仅设置博客路径，不处理数据同步
         blogForm.blogPath = filePath
-        
-        // 更新versionSyncManager配置
         await versionSyncManager.setBlogPath(filePath)
-        
         await updateBlogStatus()
-        message.success(`已选择博客文件: ${fileName}`)
+        
+        message.success(`博客文件路径设置成功: ${fileName}`)
+        message.info('请回到主界面使用"版本检查"功能进行数据同步')
       }
     } else {
       message.error('当前环境不支持文件选择')
@@ -674,10 +673,10 @@ const formatTime = (timestamp: number): string => {
 }
 
 // 保存设置
-const saveSettings = () => {
+const saveSettings = async () => {
   try {
     // 保存旧的视图模式以检测变化
-    const oldSettings = storage.load<AppSettings>('appSettings', null)
+    const oldSettings = await configAPI.getSettings()
     const oldViewMode = oldSettings?.general?.defaultViewMode
     
     // 验证图床配置（只有在选择了具体图床类型且填写了部分配置时才验证）
@@ -705,33 +704,32 @@ const saveSettings = () => {
     const newIsbnApiConfig: IsbnApiConfig = { ...bookApiForm }
     emit('updateIsbnApiConfig', newIsbnApiConfig)
     
-    // 保存完整设置
-    const settings: AppSettings = {
+    // 保存完整设置（移除博客路径，由versionSyncManager单独管理）
+    const settings: AppSettingsType = {
       imageBed: newImageBedConfig,
       backup: { ...backupForm },
       general: { ...generalForm },
       bookApi: { ...bookApiForm },
-      blog: { ...blogForm }
+      blog: { blogPath: '' } // 博客路径由versionSyncManager管理，这里置空避免冲突
     }
     
     emit('updateSettings', settings)
     
-    // 保存到本地存储
-    storage.save('imageBedConfig', newImageBedConfig)
-    storage.save('isbnApiConfig', newIsbnApiConfig)
-    storage.save('appSettings', settings)
+    // 使用configAPI保存设置
+    const saveSuccess = await configAPI.saveSettings(settings)
     
-    message.success('设置已保存')
-    
-    // 重置编辑状态
-    isEditing.value = false
-    
-    // 检测视图模式是否变化
-    if (oldViewMode && oldViewMode !== generalForm.defaultViewMode) {
-      message.info('默认视图模式已更改，将在下次启动应用时生效')
+    if (saveSuccess) {
+      message.success('设置已保存')
+      
+      // 检测视图模式是否变化
+      if (oldViewMode && oldViewMode !== generalForm.defaultViewMode) {
+        message.info('默认视图模式已更改，将在下次启动应用时生效')
+      }
+      
+      show.value = false
+    } else {
+      message.error('保存设置失败')
     }
-    
-    show.value = false
   } catch (error) {
     message.error('保存设置失败')
     console.error(error)
@@ -765,18 +763,19 @@ const resetSettings = () => {
     apiKey: ''
   })
   
-  // 重置博客设置（只重置路径）
-  Object.assign(blogForm, {
-    blogPath: ''
-  })
+  // 重置博客设置（博客路径由versionSyncManager管理，不在此重置）
+  // Object.assign(blogForm, {
+  //   blogPath: ''
+  // })
+  // 注意：博客路径由versionSyncManager单独管理，如需重置请使用主界面的"清除缓存"功能
   
   message.info('设置已重置')
 }
 
 // 初始化设置
-const initializeSettings = () => {
+const initializeSettings = async () => {
   try {
-    const savedSettings = storage.load<AppSettings>('appSettings', null)
+    const savedSettings = await configAPI.getSettings()
     if (savedSettings) {
       // 恢复备份设置
       if (savedSettings.backup) {
@@ -793,14 +792,14 @@ const initializeSettings = () => {
         Object.assign(bookApiForm, savedSettings.bookApi)
       }
       
-      // 恢复博客设置
-      if (savedSettings.blog) {
-        Object.assign(blogForm, savedSettings.blog)
-      }
+      // 恢复博客设置（博客路径由versionSyncManager管理，不从settings中读取）
+      // if (savedSettings.blog) {
+      //   Object.assign(blogForm, savedSettings.blog)
+      // }
     }
     
     // 从版本同步管理器获取博客配置并覆盖本地设置
-    const blogConfig = versionSyncManager.getBlogConfig()
+    const blogConfig = await versionSyncManager.getBlogConfig()
     if (blogConfig) {
       blogForm.blogPath = blogConfig.blogPath
       blogStatus.lastSync = blogConfig.lastSyncTime
@@ -810,88 +809,6 @@ const initializeSettings = () => {
     console.error('初始化设置失败:', error)
   }
 }
-
-// 监听博客配置变化，确保设置界面能实时反映最新配置
-const watchBlogConfig = () => {
-  // 创建一个定时器来监听博客配置变化
-  const checkBlogConfig = () => {
-    const blogConfig = versionSyncManager.getBlogConfig()
-    if (blogConfig && blogConfig.blogPath !== blogForm.blogPath) {
-      console.log('检测到博客配置变化，更新设置界面:', blogConfig.blogPath)
-      blogForm.blogPath = blogConfig.blogPath
-      blogStatus.lastSync = blogConfig.lastSyncTime
-      updateBlogStatus()
-    }
-  }
-  
-  // 立即检查一次
-  checkBlogConfig()
-  
-  // 每秒检查一次博客配置变化（仅在组件活跃时）
-  const intervalId = setInterval(checkBlogConfig, 1000)
-  
-  // 组件卸载时清理定时器
-  onUnmounted(() => {
-    clearInterval(intervalId)
-  })
-}
-
-// 监听应用设置变化，确保设置界面能实时反映最新配置
-const watchAppSettings = () => {
-  // 创建一个定时器来监听应用设置变化
-  const checkAppSettings = () => {
-    // 如果对话框未显示或正在编辑中，则不进行自动同步
-    if (!show.value || isEditing.value) {
-      return
-    }
-    
-    const savedSettings = storage.load<AppSettings>('appSettings', null)
-    if (savedSettings) {
-      // 检查备份设置是否发生变化
-      if (savedSettings.backup && savedSettings.backup.folderPath !== backupForm.folderPath) {
-        console.log('检测到备份设置变化，更新设置界面:', savedSettings.backup.folderPath)
-        Object.assign(backupForm, savedSettings.backup)
-      }
-      
-      // 检查通用设置是否发生变化
-      if (savedSettings.general) {
-        const hasGeneralChanges = Object.keys(savedSettings.general).some(key => 
-          savedSettings.general[key] !== generalForm[key]
-        )
-        if (hasGeneralChanges) {
-          console.log('检测到通用设置变化，更新设置界面')
-          Object.assign(generalForm, savedSettings.general)
-        }
-      }
-      
-      // 检查图书API设置是否发生变化
-      if (savedSettings.bookApi && savedSettings.bookApi.apiKey !== bookApiForm.apiKey) {
-        console.log('检测到图书API设置变化，更新设置界面')
-        Object.assign(bookApiForm, savedSettings.bookApi)
-      }
-    }
-  }
-  
-  // 立即检查一次
-  checkAppSettings()
-  
-  // 每秒检查一次应用设置变化（仅在组件活跃时）
-  const intervalId = setInterval(checkAppSettings, 1000)
-  
-  // 组件卸载时清理定时器
-  onUnmounted(() => {
-    clearInterval(intervalId)
-  })
-}
-
-// 组件挂载时初始化
-initializeSettings()
-
-// 启动博客配置监听
-watchBlogConfig()
-
-// 启动应用设置监听
-watchAppSettings()
 </script>
 
 <style scoped>

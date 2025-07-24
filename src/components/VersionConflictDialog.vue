@@ -15,7 +15,7 @@
           </n-icon>
           <span style="font-weight: 600;">发现版本冲突</span>
         </template>
-        检测到缓存数据与博客文件不一致，请选择要使用的版本。
+        检测到持久化存储数据与博客文件不一致，请选择要使用的版本。
       </n-alert>
 
       <div class="version-comparison">
@@ -24,7 +24,7 @@
             <n-icon size="18" color="#2080f0">
               <DatabaseIcon />
             </n-icon>
-            <span class="version-title">缓存版本</span>
+            <span class="version-title">持久化存储版本</span>
             <n-tag type="info" size="small">当前版本</n-tag>
           </div>
           <div class="version-details">
@@ -91,9 +91,9 @@
           <n-space vertical>
             <n-radio value="use_cache">
               <div class="option-content">
-                <div class="option-title">使用缓存版本</div>
+                <div class="option-title">使用持久化存储版本</div>
                 <div class="option-description">
-                  将缓存中的数据覆盖到博客文件，您在应用中的所有修改将被保留
+                  将持久化存储中的数据覆盖到博客文件，您在应用中的所有修改将被保留
                 </div>
               </div>
             </n-radio>
@@ -102,7 +102,7 @@
               <div class="option-content">
                 <div class="option-title">使用博客文件版本</div>
                 <div class="option-description">
-                  从博客文件重新加载数据，缓存中的修改将被覆盖
+                  从博客文件重新加载数据，持久化存储中的修改将被覆盖
                 </div>
               </div>
             </n-radio>
@@ -305,11 +305,23 @@ const selectBackupPath = async (): Promise<boolean> => {
   return false
 }
 
-// 过滤差异列表，移除空的差异描述
+// 过滤差异列表，只移除明显无效的差异
 const filteredDifferences = computed(() => {
   return (props.compareResult.differences || []).filter(diff => {
-    const description = formatDifference(diff)
-    return description && description.trim() !== ''
+    // 只过滤掉真正无效的差异，保留所有有意义的变化
+    if (!diff || !diff.type) return false
+    
+    // 保留所有类型的差异，包括新增、删除、修改等
+    if (['added', 'removed', 'modified', 'reordered', 'structure_changed'].includes(diff.type)) {
+      return true
+    }
+    
+    // 对于验证警告，检查是否有实际内容
+    if (diff.type === 'validation_warning') {
+      return diff.description && diff.description.trim() !== ''
+    }
+    
+    return true
   })
 })
 
@@ -336,41 +348,84 @@ const getDiffTypeText = (type: string): string => {
 }
 
 const formatDifference = (diff: any): string => {
+  // 优先使用预设的描述信息
   if (diff.description) {
     return diff.description
   }
   
   switch (diff.type) {
     case 'added':
-      return diff.field === 'book' ? 
-        `新增书籍：${diff.bookTitle}` : 
-        `新增${diff.field}: ${diff.newValue}`
+      if (diff.field === 'book') {
+        return `新增书籍：《${diff.bookTitle || diff.newValue?.title || '未知书籍'}》`
+      }
+      if (diff.field === 'book_count') {
+        return `新增了 ${diff.newValue - diff.oldValue} 本书籍`
+      }
+      return `新增${diff.field}: ${diff.newValue}`
+      
     case 'removed':
-      return diff.field === 'book' ? 
-        `删除书籍：${diff.bookTitle}` : 
-        `删除${diff.field}: ${diff.oldValue}`
+      if (diff.field === 'book') {
+        return `删除书籍：《${diff.bookTitle || diff.oldValue?.title || '未知书籍'}》`
+      }
+      if (diff.field === 'book_count') {
+        return `删除了 ${diff.oldValue - diff.newValue} 本书籍`
+      }
+      return `删除${diff.field}: ${diff.oldValue}`
+      
     case 'modified':
-      // 过滤掉ISBN和空值差异
-      if (diff.field === 'isbn') {
-        return '' // 不显示ISBN差异
+      if (diff.bookTitle) {
+        // 字段级别的修改
+        const fieldNames: Record<string, string> = {
+          'title': '标题',
+          'author': '作者',
+          'description': '简介',
+          'download_link': '下载链接',
+          'extract_code': '提取码',
+          'cover': '封面',
+          'douban_url': '豆瓣链接',
+          'publish_date': '出版日期',
+          'isbn': 'ISBN'
+        }
+        const fieldName = fieldNames[diff.field] || diff.field
+        
+        // 对于特殊字段，提供更友好的显示
+        if (diff.field === 'extract_code') {
+          const oldVal = diff.oldValue || '无'
+          const newVal = diff.newValue || '无'
+          return `《${diff.bookTitle}》的${fieldName}：${oldVal} → ${newVal}`
+        }
+        
+        // 对于较长的内容，截断显示
+        const formatValue = (value: any) => {
+          if (!value) return '空'
+          const str = String(value)
+          return str.length > 30 ? str.substring(0, 30) + '...' : str
+        }
+        
+        return `《${diff.bookTitle}》的${fieldName}发生变化：${formatValue(diff.oldValue)} → ${formatValue(diff.newValue)}`
       }
+      return `修改了${diff.field}`
       
-      // 过滤掉空值与空字符串的差异
-      const oldVal = diff.oldValue || ''
-      const newVal = diff.newValue || ''
-      if (oldVal === newVal) {
-        return '' // 不显示无意义的差异
-      }
-      
-      return diff.field === 'book' ? 
-        `修改书籍：${diff.bookTitle}` : 
-        `修改${diff.bookTitle}的${diff.field}`
     case 'reordered':
       return '书籍排序发生变化'
+      
     case 'structure_changed':
+      if (diff.field === 'header') {
+        return '文件头部内容发生变化（可能包含Hexo标签、语言设置等）'
+      }
+      if (diff.field === 'footer') {
+        return '文件尾部内容发生变化（可能包含JS脚本、CSS样式等）'
+      }
+      if (diff.field === 'custom_content') {
+        return diff.newValue ? '新增自定义内容（JS/CSS）' : '移除自定义内容（JS/CSS）'
+      }
       return diff.description || `${diff.field}发生变化`
+      
+    case 'validation_warning':
+      return diff.description || '数据验证警告'
+      
     default:
-      return `${diff.field}发生变化`
+      return diff.description || `${diff.field || '未知字段'}发生变化`
   }
 }
 

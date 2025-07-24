@@ -1,24 +1,29 @@
 import type { ImageUploadResponse } from '../types'
 import { errorLogger, withErrorLogging } from './errorLogger'
 
+// 类型声明，解决在Node.js环境下编译时的类型错误
+declare var window: any
+
 // 检查是否在Electron环境中
 const isElectron = () => {
-  const hasWindow = typeof window !== 'undefined'
-  const hasElectronAPI = hasWindow && window.electronAPI !== undefined
+  const hasWindow = typeof window !== 'undefined' && window
+  const hasElectronAPI = hasWindow && (window as any).electronAPI !== undefined
   
-  console.log('Electron环境检测:', {
-    hasWindow,
-    hasElectronAPI,
-    electronAPI: hasWindow ? window.electronAPI : 'window不存在',
-    availableMethods: hasWindow && window.electronAPI ? Object.keys(window.electronAPI) : [],
-    methodDetails: hasWindow && window.electronAPI ? Object.keys(window.electronAPI).map(key => ({
-      name: key,
-      type: typeof (window.electronAPI as any)[key]
-    })) : [],
-    downloadImageExists: hasWindow && window.electronAPI && 'downloadImage' in window.electronAPI,
-    hasDownloadImage: hasWindow && window.electronAPI ? typeof window.electronAPI.downloadImage === 'function' : false,
-    userAgent: hasWindow ? window.navigator.userAgent : 'N/A'
-  })
+  if (hasWindow) {
+    console.log('Electron环境检测:', {
+      hasWindow,
+      hasElectronAPI,
+      electronAPI: (window as any).electronAPI || 'electronAPI不存在',
+      availableMethods: (window as any).electronAPI ? Object.keys((window as any).electronAPI) : [],
+      methodDetails: (window as any).electronAPI ? Object.keys((window as any).electronAPI).map((key: string) => ({
+        name: key,
+        type: typeof ((window as any).electronAPI as any)[key]
+      })) : [],
+      downloadImageExists: (window as any).electronAPI && 'downloadImage' in (window as any).electronAPI,
+      hasDownloadImage: (window as any).electronAPI ? typeof (window as any).electronAPI.downloadImage === 'function' : false,
+      userAgent: (window as any).navigator ? (window as any).navigator.userAgent : 'N/A'
+    })
+  }
   
   return hasElectronAPI
 }
@@ -261,7 +266,7 @@ async function uploadToQiniuElectron(
     })
     
     // 通过Electron API上传
-    const result = await window.electronAPI.uploadImage({ 
+    const result = await (typeof window !== 'undefined' && window ? (window as any).electronAPI.uploadImage : (() => { throw new Error('Electron API不可用') }))({ 
       name: fileData.name, 
       path: fileData.path || '', 
       base64: fileData.base64 
@@ -321,11 +326,11 @@ export const downloadAndUploadImage = withErrorLogging('imageBed', async functio
   try {
     let fileBlob: File | string
     
-    if (isElectron() && window.electronAPI && typeof window.electronAPI.downloadImage === 'function') {
+    if (isElectron() && typeof window !== 'undefined' && window && (window as any).electronAPI && typeof (window as any).electronAPI.downloadImage === 'function') {
       // 在Electron环境中使用主进程下载
       errorLogger.info('imageBed', '使用Electron主进程下载图片', { imageUrl })
       
-      const downloadResult = await window.electronAPI.downloadImage(imageUrl)
+      const downloadResult = await (window as any).electronAPI.downloadImage(imageUrl)
       
       if (!downloadResult.success || !downloadResult.data) {
         throw new Error(downloadResult.error || '下载失败')

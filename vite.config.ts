@@ -20,8 +20,19 @@ export default defineConfig(({ mode }) => {
             vite: {
               build: {
                 outDir: 'dist-electron',
+                minify: false,
+                lib: {
+                  entry: 'electron/main.ts',
+                  formats: ['cjs'],
+                  fileName: () => 'main.cjs'
+                },
                 rollupOptions: {
-                  external: ['electron', 'picgo']
+                  external: ['electron', 'picgo', 'fs', 'path', 'crypto', 'https', 'http', 'url'],
+                  output: {
+                    format: 'cjs',
+                    exports: 'auto',
+                    entryFileNames: 'main.cjs'
+                  }
                 }
               }
             }
@@ -34,8 +45,19 @@ export default defineConfig(({ mode }) => {
             vite: {
               build: {
                 outDir: 'dist-electron',
+                minify: false,
+                lib: {
+                  entry: 'electron/preload.ts',
+                  formats: ['cjs'],
+                  fileName: () => 'preload.cjs'
+                },
                 rollupOptions: {
-                  external: ['electron']
+                  external: ['electron'],
+                  output: {
+                    format: 'cjs',
+                    exports: 'auto',
+                    entryFileNames: 'preload.cjs'
+                  }
                 }
               }
             }

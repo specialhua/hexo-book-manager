@@ -1,7 +1,9 @@
 /**
  * 浏览器环境下的文件操作工具
- * 替代 Tauri 的文件系统API
+ * 替代 Tauri 的文件系统API，现在使用configAPI进行统一配置管理
  */
+
+import { configAPI } from './configAPI'
 
 export interface FileInfo {
   content: string
@@ -142,13 +144,15 @@ export async function selectImage(): Promise<string> {
 }
 
 /**
- * 本地存储管理
+ * 本地存储管理 (已弃用，推荐使用configAPI)
+ * @deprecated 请使用 configAPI 替代直接的 localStorage 操作
  */
 export class LocalStorageManager {
   private prefix: string
   
   constructor(prefix: string = 'book-manager') {
     this.prefix = prefix
+    console.warn('LocalStorageManager is deprecated. Please use configAPI instead.')
   }
   
   /**
@@ -459,8 +463,133 @@ export class LocalStorageManager {
 
 /**
  * 默认的存储管理器实例
+ * @deprecated 请使用 configAPI 替代
  */
 export const storage = new LocalStorageManager()
+
+/**
+ * 新的统一存储接口
+ * 推荐使用此接口替代直接的 localStorage 操作
+ */
+export const unifiedStorage = {
+  /**
+   * 获取配置数据（通用方法）
+   */
+  async load<T>(key: string, defaultValue: T | null = null): Promise<T | null> {
+    try {
+      // 首先尝试从新的配置系统读取
+      switch (key) {
+        case 'appSettings':
+          return (await configAPI.getSettings()) as T || defaultValue
+        case 'books':
+          const booksData = await configAPI.getBooksData()
+          return (booksData?.books as T) || defaultValue
+        case 'originalFileOrder':
+          const fileOrderData = await configAPI.getBooksData()
+          return (fileOrderData?.originalFileOrder as T) || defaultValue
+        case 'originalFileStructure':
+          const structureData = await configAPI.getBooksData()
+          return (structureData?.originalFileStructure as T) || defaultValue
+        case 'currentFile':
+          const currentFileData = await configAPI.getBooksData()
+          return (currentFileData?.currentFile as T) || defaultValue
+        case 'blogConfig':
+          return (await configAPI.getSyncConfig()) as T || defaultValue
+        case 'hasSeenFirstTimeSetup':
+          const appState = await configAPI.getAppState()
+          return (appState?.hasSeenFirstTimeSetup as T) || defaultValue
+        case 'permanentlySkippedSetup':
+          const skipState = await configAPI.getAppState()
+          return (skipState?.permanentlySkippedSetup as T) || defaultValue
+        default:
+          // 降级到旧的localStorage
+          return storage.load(key, defaultValue)
+      }
+    } catch (error) {
+      console.error('从统一存储读取失败:', error)
+      return storage.load(key, defaultValue)
+    }
+  },
+
+  /**
+   * 保存配置数据（通用方法）
+   */
+  async save(key: string, value: any): Promise<boolean> {
+    try {
+      // 根据key类型选择合适的保存方法
+      switch (key) {
+        case 'appSettings':
+          return await configAPI.saveSettings(value)
+        case 'books':
+          const currentBooksData = await configAPI.getBooksData()
+          return await configAPI.saveBooksData({
+            ...currentBooksData,
+            books: value
+          })
+        case 'originalFileOrder':
+          const currentOrderData = await configAPI.getBooksData()
+          return await configAPI.saveBooksData({
+            books: currentOrderData?.books || [],
+            originalFileOrder: value,
+            originalFileStructure: currentOrderData?.originalFileStructure || null,
+            currentFile: currentOrderData?.currentFile || null
+          })
+        case 'originalFileStructure':
+          const currentStructureData = await configAPI.getBooksData()
+          return await configAPI.saveBooksData({
+            books: currentStructureData?.books || [],
+            originalFileOrder: currentStructureData?.originalFileOrder || [],
+            originalFileStructure: value,
+            currentFile: currentStructureData?.currentFile || null
+          })
+        case 'currentFile':
+          const currentFileContainerData = await configAPI.getBooksData()
+          return await configAPI.saveBooksData({
+            books: currentFileContainerData?.books || [],
+            originalFileOrder: currentFileContainerData?.originalFileOrder || [],
+            originalFileStructure: currentFileContainerData?.originalFileStructure || null,
+            currentFile: value
+          })
+        case 'blogConfig':
+          return await configAPI.saveSyncConfig(value)
+        case 'hasSeenFirstTimeSetup':
+          const currentAppState = await configAPI.getAppState()
+          return await configAPI.saveAppState({
+            hasSeenFirstTimeSetup: value,
+            permanentlySkippedSetup: currentAppState?.permanentlySkippedSetup || false,
+            lastUsedVersion: currentAppState?.lastUsedVersion || '1.0.7'
+          })
+        case 'permanentlySkippedSetup':
+          const currentSkipState = await configAPI.getAppState()
+          return await configAPI.saveAppState({
+            hasSeenFirstTimeSetup: currentSkipState?.hasSeenFirstTimeSetup || false,
+            permanentlySkippedSetup: value,
+            lastUsedVersion: currentSkipState?.lastUsedVersion || '1.0.7'
+          })
+        default:
+          // 降级到旧的localStorage
+          return storage.save(key, value)
+      }
+    } catch (error) {
+      console.error('保存到统一存储失败:', error)
+      return storage.save(key, value)
+    }
+  },
+
+  /**
+   * 删除数据
+   */
+  remove(key: string): void {
+    storage.remove(key)
+  },
+
+  /**
+   * 获取所有键
+   */
+  getAllKeys(): string[] {
+    return storage.getAllKeys()
+  }
+}
 
 /**
  * 复制文本到剪贴板

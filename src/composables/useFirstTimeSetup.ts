@@ -5,6 +5,7 @@ import { versionSyncManager } from '../utils/versionSync'
 import { loadDemoData } from '../utils/demoLoader'
 import type { Book } from '../types'
 import type { OriginalFileStructure } from '../utils/bookParser'
+import { configAPI } from '../utils/configAPI'
 
 export interface FileInfo {
   fileName: string
@@ -22,10 +23,21 @@ export function useFirstTimeSetup(options: UseFirstTimeSetupOptions = {}) {
   const loading = ref(false)
 
   // 检查是否为首次使用
-  const checkIfFirstTimeUser = () => {
-    const hasSeenSetup = storage.load<boolean>('hasSeenFirstTimeSetup', false)
-    const permanentlySkipped = storage.load<boolean>('permanentlySkippedSetup', false)
-    const blogConfig = versionSyncManager.getBlogConfig()
+  const checkIfFirstTimeUser = async () => {
+    // 检查是否为重置状态
+    const isReset = configAPI.isResetState()
+    if (isReset) {
+      console.log('检测到重置状态，强制显示首次设置界面')
+      showFirstTimeSetup.value = true
+      // 清除重置标记，避免重复触发
+      configAPI.clearResetFlag()
+      return
+    }
+    
+    const appState = await configAPI.getAppState()
+    const hasSeenSetup = appState?.hasSeenFirstTimeSetup || false
+    const permanentlySkipped = appState?.permanentlySkippedSetup || false
+    const blogConfig = await versionSyncManager.getBlogConfig()
     
     // 如果永久跳过了，不再显示设置界面
     if (permanentlySkipped) {
@@ -52,18 +64,20 @@ export function useFirstTimeSetup(options: UseFirstTimeSetupOptions = {}) {
   }> => {
     try {
       // 立即保存设置标记
-      storage.save('hasSeenFirstTimeSetup', true)
+      const appState = await configAPI.getAppState() || { hasSeenFirstTimeSetup: false, permanentlySkippedSetup: false, lastUsedVersion: '1.0.7' }
+      appState.hasSeenFirstTimeSetup = true
+      await configAPI.saveAppState(appState)
       
       if (blogPath) {
         // 确保博客路径设置完成
         await versionSyncManager.setBlogPath(blogPath)
         
         // 立即更新响应式的博客配置状态
-        blogConfigState.value = versionSyncManager.getBlogConfig()
+        blogConfigState.value = await versionSyncManager.getBlogConfig()
         
         // 验证保存结果
-        const savedConfig = versionSyncManager.getBlogConfig()
-        const savedSetup = storage.load<boolean>('hasSeenFirstTimeSetup', false)
+        const savedConfig = await versionSyncManager.getBlogConfig()
+        const savedSetup = appState.hasSeenFirstTimeSetup
         
         // 显示加载状态
         loading.value = true
@@ -79,9 +93,13 @@ export function useFirstTimeSetup(options: UseFirstTimeSetupOptions = {}) {
               filePath: blogPath
             }
             
-            // 重要：保存所有数据到localStorage
-            storage.save('books', syncedBooks)
-            storage.save('currentFile', currentFile)
+            // 重要：保存所有数据到configAPI
+            await configAPI.saveBooksData({
+              books: syncedBooks,
+              originalFileOrder: syncedBooks,
+              originalFileStructure: null,
+              currentFile: currentFile
+            })
             
             // 设置为已同步状态 - 锁定状态5秒
             setVersionStatus('synced', 5000)
@@ -111,13 +129,13 @@ export function useFirstTimeSetup(options: UseFirstTimeSetupOptions = {}) {
               const sampleBooks = demoResult.books
               const originalFileStructure = demoResult.originalFileStructure
               
-              // 保存示例数据到缓存
-              storage.save('books', sampleBooks)
-              storage.save('originalFileStructure', originalFileStructure)
-              
-              // 使用示例数据时，不设置currentFile（保持为null）
-              // 这样提示框会正确显示"使用示例数据"而不是"博客目录"
-              storage.save('currentFile', null)
+              // 保存示例数据到configAPI
+              await configAPI.saveBooksData({
+                books: sampleBooks,
+                originalFileOrder: sampleBooks,
+                originalFileStructure: originalFileStructure,
+                currentFile: null // 使用示例数据时，不设置currentFile
+              })
               
               setVersionStatus('conflict', 3000) // 因为缓存有示例数据，博客文件为空，锁定3秒
               message.info('已加载示例数据，您可以开始添加书籍')
@@ -138,9 +156,13 @@ export function useFirstTimeSetup(options: UseFirstTimeSetupOptions = {}) {
                 filePath: blogPath
               }
               
-              // 保存到localStorage
-              storage.save('books', [])
-              storage.save('currentFile', currentFile)
+              // 保存到configAPI
+              await configAPI.saveBooksData({
+                books: [],
+                originalFileOrder: [],
+                originalFileStructure: null,
+                currentFile: currentFile
+              })
               
               setVersionStatus('synced', 3000) // 都是空的，算作同步，锁定3秒
               message.info('设置完成，您可以开始添加书籍')
@@ -173,9 +195,13 @@ export function useFirstTimeSetup(options: UseFirstTimeSetupOptions = {}) {
             const sampleBooks = demoResult.books
             const originalFileStructure = demoResult.originalFileStructure
             
-            // 保存示例数据到缓存
-            storage.save('books', sampleBooks)
-            storage.save('originalFileStructure', originalFileStructure)
+            // 保存示例数据到configAPI
+            await configAPI.saveBooksData({
+              books: sampleBooks,
+              originalFileOrder: sampleBooks,
+              originalFileStructure: originalFileStructure,
+              currentFile: null
+            })
             
             setVersionStatus('unknown')
             message.info('已加载示例数据，建议重新设置博客路径')
@@ -191,9 +217,10 @@ export function useFirstTimeSetup(options: UseFirstTimeSetupOptions = {}) {
             }
           } else {
             // 用户选择重新设置，清除配置
-            versionSyncManager.clearBlogConfig()
+            await versionSyncManager.clearBlogConfig()
             blogConfigState.value = null // 更新响应式状态
-            storage.save('hasSeenFirstTimeSetup', false)
+            appState.hasSeenFirstTimeSetup = false
+            await configAPI.saveAppState(appState)
             
             setVersionStatus('unknown')
             
@@ -220,11 +247,13 @@ export function useFirstTimeSetup(options: UseFirstTimeSetupOptions = {}) {
         const sampleBooks = demoResult.books
         const originalFileStructure = demoResult.originalFileStructure
         
-        // 保存到localStorage
-        storage.save('books', sampleBooks)
-        storage.save('originalFileOrder', sampleBooks) // 使用示例数据作为原始排序
-        storage.save('originalFileStructure', originalFileStructure)
-        storage.save('currentFile', null)
+        // 保存到configAPI
+        await configAPI.saveBooksData({
+          books: sampleBooks,
+          originalFileOrder: sampleBooks,
+          originalFileStructure: originalFileStructure,
+          currentFile: null
+        })
         
         setVersionStatus('unknown')
         message.info('使用示例数据，您可以通过"从文件加载"来导入现有书单')
@@ -255,11 +284,13 @@ export function useFirstTimeSetup(options: UseFirstTimeSetupOptions = {}) {
           const sampleBooks = demoResult.books
           const originalFileStructure = demoResult.originalFileStructure
           
-          // 保存到localStorage
-          storage.save('books', sampleBooks)
-          storage.save('originalFileOrder', sampleBooks) // 使用示例数据作为原始排序
-          storage.save('originalFileStructure', originalFileStructure)
-          storage.save('currentFile', null)
+          // 保存到configAPI
+          await configAPI.saveBooksData({
+            books: sampleBooks,
+            originalFileOrder: sampleBooks,
+            originalFileStructure: originalFileStructure,
+            currentFile: null
+          })
           
           setVersionStatus('unknown')
           message.info('使用示例数据，您可以通过"从文件加载"来导入现有书单')

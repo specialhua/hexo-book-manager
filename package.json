@@ -13,7 +13,7 @@
     "build:appimage": "vite build --mode electron && electron-builder --publish never --linux AppImage",
     "build:publish": "vite build --mode electron && electron-builder --publish always",
     "build:dir": "vite build && electron-builder --dir",
-    "build:electron": "tsc -p electron && node scripts/build-cjs.cjs && vite build --mode electron",
+    "build:electron": "rm -rf dist-electron && tsc -p electron && node scripts/build-cjs.cjs && vite build --mode electron",
     "type-check": "tsc --noEmit --skipLibCheck",
     "preview": "vite preview",
     "electron": "electron .",

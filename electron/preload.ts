@@ -33,6 +33,21 @@ export interface ElectronAPI {
   
   // 主题文件保存相关API
   saveThemeFile: (params: { filename: string, content: string, type: 'css' | 'js' }) => Promise<{ success: boolean, data?: { filePath: string }, error?: string }>
+  
+  // 配置管理API
+  configGetSettings: () => Promise<{ success: boolean, data?: any, error?: string }>
+  configSaveSettings: (settings: any) => Promise<{ success: boolean, error?: string }>
+  configGetBooks: () => Promise<{ success: boolean, data?: any, error?: string }>
+  configSaveBooks: (booksData: any) => Promise<{ success: boolean, error?: string }>
+  configGetSync: () => Promise<{ success: boolean, data?: any, error?: string }>
+  configSaveSync: (syncConfig: any) => Promise<{ success: boolean, error?: string }>
+  configGetState: () => Promise<{ success: boolean, data?: any, error?: string }>
+  configSaveState: (appState: any) => Promise<{ success: boolean, error?: string }>
+  configMigrateFromLocalStorage: (localStorageData: Record<string, any>, options: any) => Promise<{ success: boolean, migratedFiles?: string[], errors?: string[], backupPath?: string }>
+  configExportAll: () => Promise<{ success: boolean, data?: any, error?: string }>
+  configExists: (filename: string) => Promise<{ success: boolean, data?: boolean, error?: string }>
+  configGetDirectory: () => Promise<{ success: boolean, data?: { configDirectory: string, backupDirectory: string }, error?: string }>
+  configClearAll: () => Promise<{ success: boolean, error?: string }>
 }
 
 // 暴露API到渲染进程
@@ -105,6 +120,72 @@ const electronAPI = {
   saveThemeFile: (params: { filename: string, content: string, type: 'css' | 'js' }) => {
     console.log('preload.ts: saveThemeFile 被调用', params.filename)
     return ipcRenderer.invoke('save-theme-file', params)
+  },
+  
+  // 配置管理API实现
+  configGetSettings: () => {
+    console.log('preload.ts: configGetSettings 被调用')
+    return ipcRenderer.invoke('config-get-settings')
+  },
+  
+  configSaveSettings: (settings: any) => {
+    console.log('preload.ts: configSaveSettings 被调用')
+    return ipcRenderer.invoke('config-save-settings', settings)
+  },
+  
+  configGetBooks: () => {
+    console.log('preload.ts: configGetBooks 被调用')
+    return ipcRenderer.invoke('config-get-books')
+  },
+  
+  configSaveBooks: (booksData: any) => {
+    console.log('preload.ts: configSaveBooks 被调用')
+    return ipcRenderer.invoke('config-save-books', booksData)
+  },
+  
+  configGetSync: () => {
+    console.log('preload.ts: configGetSync 被调用')
+    return ipcRenderer.invoke('config-get-sync')
+  },
+  
+  configSaveSync: (syncConfig: any) => {
+    console.log('preload.ts: configSaveSync 被调用')
+    return ipcRenderer.invoke('config-save-sync', syncConfig)
+  },
+  
+  configGetState: () => {
+    console.log('preload.ts: configGetState 被调用')
+    return ipcRenderer.invoke('config-get-state')
+  },
+  
+  configSaveState: (appState: any) => {
+    console.log('preload.ts: configSaveState 被调用')
+    return ipcRenderer.invoke('config-save-state', appState)
+  },
+  
+  configMigrateFromLocalStorage: (localStorageData: Record<string, any>, options: any) => {
+    console.log('preload.ts: configMigrateFromLocalStorage 被调用')
+    return ipcRenderer.invoke('config-migrate-from-localstorage', localStorageData, options)
+  },
+  
+  configExportAll: () => {
+    console.log('preload.ts: configExportAll 被调用')
+    return ipcRenderer.invoke('config-export-all')
+  },
+  
+  configExists: (filename: string) => {
+    console.log('preload.ts: configExists 被调用', filename)
+    return ipcRenderer.invoke('config-exists', filename)
+  },
+  
+  configGetDirectory: () => {
+    console.log('preload.ts: configGetDirectory 被调用')
+    return ipcRenderer.invoke('config-get-directory')
+  },
+  
+  configClearAll: () => {
+    console.log('preload.ts: configClearAll 被调用')
+    return ipcRenderer.invoke('config-clear-all')
   }
 } as ElectronAPI
 

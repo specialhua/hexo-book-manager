@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
 import path from 'path'
 import { PicGoService } from './picgo-service.js'
+import { configManager } from './config-manager.js'
 import https from 'https'
 import http from 'http'
 import { URL } from 'url'
@@ -47,7 +48,15 @@ function createWindow() {
 }
 
 // 应用准备就绪时创建窗口
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // 初始化配置管理器
+  try {
+    await configManager.initialize()
+    console.log('ConfigManager initialized successfully')
+  } catch (error) {
+    console.error('Failed to initialize ConfigManager:', error)
+  }
+  
   createWindow()
   
   // 初始化PicGo服务
@@ -631,6 +640,148 @@ ipcMain.handle('save-theme-file', async (event, params: { filename: string, cont
     }
   } catch (error) {
     console.error('Save theme file failed:', error)
+    return { success: false, error: (error as Error).message }
+  }
+})
+
+// ====== 配置管理相关IPC处理器 ======
+
+// 获取应用设置
+ipcMain.handle('config-get-settings', async () => {
+  try {
+    return await configManager.getSettings()
+  } catch (error) {
+    console.error('Get settings failed:', error)
+    return { success: false, error: (error as Error).message }
+  }
+})
+
+// 保存应用设置
+ipcMain.handle('config-save-settings', async (event, settings) => {
+  try {
+    return await configManager.saveSettings(settings)
+  } catch (error) {
+    console.error('Save settings failed:', error)
+    return { success: false, error: (error as Error).message }
+  }
+})
+
+// 获取书籍数据
+ipcMain.handle('config-get-books', async () => {
+  try {
+    return await configManager.getBooksData()
+  } catch (error) {
+    console.error('Get books data failed:', error)
+    return { success: false, error: (error as Error).message }
+  }
+})
+
+// 保存书籍数据
+ipcMain.handle('config-save-books', async (event, booksData) => {
+  try {
+    return await configManager.saveBooksData(booksData)
+  } catch (error) {
+    console.error('Save books data failed:', error)
+    return { success: false, error: (error as Error).message }
+  }
+})
+
+// 获取同步配置
+ipcMain.handle('config-get-sync', async () => {
+  try {
+    return await configManager.getSyncConfig()
+  } catch (error) {
+    console.error('Get sync config failed:', error)
+    return { success: false, error: (error as Error).message }
+  }
+})
+
+// 保存同步配置
+ipcMain.handle('config-save-sync', async (event, syncConfig) => {
+  try {
+    return await configManager.saveSyncConfig(syncConfig)
+  } catch (error) {
+    console.error('Save sync config failed:', error)
+    return { success: false, error: (error as Error).message }
+  }
+})
+
+// 获取应用状态
+ipcMain.handle('config-get-state', async () => {
+  try {
+    return await configManager.getAppState()
+  } catch (error) {
+    console.error('Get app state failed:', error)
+    return { success: false, error: (error as Error).message }
+  }
+})
+
+// 保存应用状态
+ipcMain.handle('config-save-state', async (event, appState) => {
+  try {
+    return await configManager.saveAppState(appState)
+  } catch (error) {
+    console.error('Save app state failed:', error)
+    return { success: false, error: (error as Error).message }
+  }
+})
+
+// 从localStorage迁移数据
+ipcMain.handle('config-migrate-from-localstorage', async (event, localStorageData, options) => {
+  try {
+    return await configManager.migrateFromLocalStorage(localStorageData, options)
+  } catch (error) {
+    console.error('Migration from localStorage failed:', error)
+    return { success: false, error: (error as Error).message }
+  }
+})
+
+// 导出所有配置
+ipcMain.handle('config-export-all', async () => {
+  try {
+    return await configManager.exportAllConfig()
+  } catch (error) {
+    console.error('Export all config failed:', error)
+    return { success: false, error: (error as Error).message }
+  }
+})
+
+// 检查配置文件是否存在
+ipcMain.handle('config-exists', async (event, filename) => {
+  try {
+    const exists = await configManager.configExists(filename)
+    return { success: true, data: exists }
+  } catch (error) {
+    console.error('Check config exists failed:', error)
+    return { success: false, error: (error as Error).message }
+  }
+})
+
+// 获取配置目录路径
+ipcMain.handle('config-get-directory', async () => {
+  try {
+    const configDir = configManager.getConfigDirectory()
+    const backupDir = configManager.getBackupDirectory()
+    return { 
+      success: true, 
+      data: { 
+        configDirectory: configDir,
+        backupDirectory: backupDir 
+      } 
+    }
+  } catch (error) {
+    console.error('Get config directory failed:', error)
+    return { success: false, error: (error as Error).message }
+  }
+})
+
+// 清除所有配置文件
+ipcMain.handle('config-clear-all', async () => {
+  try {
+    const result = await configManager.clearAllConfigs()
+    return result
+  } catch (error) {
+    console.error('Clear all configs failed:', error)
     return { success: false, error: (error as Error).message }
   }
 })

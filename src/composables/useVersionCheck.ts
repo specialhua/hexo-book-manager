@@ -1,6 +1,6 @@
 import { ref, computed, Ref } from 'vue'
 import { useMessage, useDialog } from 'naive-ui'
-import { versionSyncManager, type VersionCompareResult } from '../utils/versionSync'
+import { versionSyncManager, type VersionCompareResult, type BlogConfig } from '../utils/versionSync'
 import { storage } from '../utils/browserAPI'
 import type { Book } from '../types'
 
@@ -25,8 +25,24 @@ export function useVersionCheck(options: UseVersionCheckOptions = {}) {
   const versionStatusLocked = ref(false)
   const versionStatusLockTimeout = ref<NodeJS.Timeout | null>(null)
   
-  // 博客配置状态
-  const blogConfigState = ref(versionSyncManager.getBlogConfig())
+  // 数据修改时间戳跟踪
+  const lastDataModificationTime = ref<number>(0)
+  
+  // 博客配置状态 - 使用异步初始化
+  const blogConfigState = ref<BlogConfig | null>(null)
+  
+  // 异步初始化博客配置
+  const initializeBlogConfig = async () => {
+    try {
+      blogConfigState.value = await versionSyncManager.getBlogConfig()
+    } catch (error) {
+      console.error('初始化博客配置失败:', error)
+      blogConfigState.value = null
+    }
+  }
+  
+  // 立即执行初始化
+  initializeBlogConfig()
   
   // 计算是否配置了博客
   const hasBlogConfig = computed(() => {
@@ -98,8 +114,9 @@ export function useVersionCheck(options: UseVersionCheckOptions = {}) {
   
   // 检查版本（自动）
   const checkVersions = async () => {
-    const blogConfig = versionSyncManager.getBlogConfig()
-    if (!blogConfig) {
+    const blogConfig = await versionSyncManager.getBlogConfig()
+    if (!blogConfig || !blogConfig.blogPath) {
+      setVersionStatus('unknown')
       return
     }
     
@@ -110,9 +127,18 @@ export function useVersionCheck(options: UseVersionCheckOptions = {}) {
     
     // 如果状态被锁定，跳过自动检查
     if (versionStatusLocked.value) {
+      console.log('🔧 自动版本检查：状态被锁定，跳过检查')
       return
     }
     
+    // 如果数据刚刚被修改（5秒内），跳过自动检查
+    const timeSinceLastModification = Date.now() - lastDataModificationTime.value
+    if (timeSinceLastModification < 5000) {
+      console.log(`🔧 自动版本检查：数据刚被修改（${timeSinceLastModification}ms前），跳过检查以保持冲突状态`)
+      return
+    }
+    
+    console.log('🔧 执行自动版本检查...')
     setVersionStatus('checking')
     
     try {
@@ -122,24 +148,27 @@ export function useVersionCheck(options: UseVersionCheckOptions = {}) {
         if (compareResult.hasConflict) {
           setVersionStatus('conflict')
           versionConflictData.value = compareResult
+          console.log('🔧 自动版本检查：检测到冲突')
           // 自动检查时不自动弹出对话框，等待用户手动点击
           // showVersionConflict.value = true
         } else {
           setVersionStatus('synced')
+          console.log('🔧 自动版本检查：数据已同步')
         }
       } else {
         setVersionStatus('unknown')
+        console.log('🔧 自动版本检查：检查失败')
       }
     } catch (error) {
-      console.error('版本检查失败:', error)
+      console.error('🔧 自动版本检查失败:', error)
       setVersionStatus('unknown')
     }
   }
   
   // 手动检查版本
   const manualCheckVersions = async () => {
-    const blogConfig = versionSyncManager.getBlogConfig()
-    if (!blogConfig) {
+    const blogConfig = await versionSyncManager.getBlogConfig()
+    if (!blogConfig || !blogConfig.blogPath) {
       message.warning('请先在设置中配置博客文件路径')
       return
     }
@@ -153,6 +182,10 @@ export function useVersionCheck(options: UseVersionCheckOptions = {}) {
     // 设置状态为检查中
     checkingVersions.value = true
     forceSetVersionStatus('checking')
+    
+    console.log('🔧 开始手动版本检查...')
+    console.log('🔧 博客配置路径:', blogConfig.blogPath)
+    console.log('🔧 配置中的版本标识:', blogConfig.cacheVersion)
     
     // 创建一个保险机制，确保状态在合理时间内被重置
     const safetyTimeout = setTimeout(() => {
@@ -169,7 +202,11 @@ export function useVersionCheck(options: UseVersionCheckOptions = {}) {
       clearTimeout(safetyTimeout)
       
       if (compareResult) {
-        if (compareResult.hasConflict) {
+        console.log('🔧 版本检查完成，冲突状态:', compareResult.hasConflict)
+        console.log('🔧 差异数量:', compareResult.differences?.length || 0)
+        
+        // 增强的冲突检测逻辑 - 确保有差异时一定显示对话框
+        if (compareResult.hasConflict || (compareResult.differences && compareResult.differences.length > 0)) {
           forceSetVersionStatus('conflict')
           versionConflictData.value = compareResult
           
@@ -178,25 +215,30 @@ export function useVersionCheck(options: UseVersionCheckOptions = {}) {
           
           try {
             showVersionConflict.value = true
-            message.info('检测到版本冲突，请选择处理方式')
+            const diffCount = compareResult.differences?.length || 0
+            message.info(`检测到版本冲突（${diffCount}个差异），请选择处理方式`)
+            console.log('🔧 版本冲突对话框已显示，差异数量:', diffCount)
           } catch (dialogError) {
             console.error('显示版本冲突对话框失败:', dialogError)
             message.error('无法显示版本冲突对话框，请检查系统配置')
             forceSetVersionStatus('unknown')
           }
         } else {
+          // 只有在真正没有任何差异时才显示"已同步"
           forceSetVersionStatus('synced')
-          message.success('版本检查完成，缓存与博客文件已同步')
+          message.success('版本检查完成，持久化存储与博客文件已同步')
+          console.log('🔧 版本检查完成，数据已同步（无差异）')
         }
       } else {
         forceSetVersionStatus('unknown')
         message.warning('版本检查失败，请检查博客文件路径')
+        console.log('🔧 版本检查失败，compareResult为null')
       }
     } catch (error) {
       // 清除超时保护
       clearTimeout(safetyTimeout)
       
-      console.error('版本检查失败:', error)
+      console.error('🔧 版本检查失败:', error)
       forceSetVersionStatus('unknown')
       
       // 简化错误处理
@@ -216,6 +258,7 @@ export function useVersionCheck(options: UseVersionCheckOptions = {}) {
     } finally {
       // 确保状态被重置
       checkingVersions.value = false
+      console.log('🔧 版本检查流程结束')
     }
   }
   
@@ -226,15 +269,15 @@ export function useVersionCheck(options: UseVersionCheckOptions = {}) {
       forceSetVersionStatus('synced')
       
       // 冲突解决成功后，需要同步版本标识
-      const blogConfig = versionSyncManager.getBlogConfig()
+      const blogConfig = await versionSyncManager.getBlogConfig()
       if (blogConfig) {
-        const currentCacheVersion = versionSyncManager.getCurrentCacheVersion()
+        const currentCacheVersion = await versionSyncManager.getCurrentCacheVersion()
         const newConfig = {
           ...blogConfig,
           cacheVersion: currentCacheVersion,
           lastSyncTime: Date.now()
         }
-        versionSyncManager.setBlogConfig(newConfig)
+        await versionSyncManager.setBlogConfig(newConfig)
       }
       
       message.success('版本冲突已解决，数据已同步')
@@ -288,15 +331,43 @@ export function useVersionCheck(options: UseVersionCheckOptions = {}) {
   }
   
   // 更新博客配置状态
-  const updateBlogConfigState = () => {
-    blogConfigState.value = versionSyncManager.getBlogConfig()
+  const updateBlogConfigState = async () => {
+    blogConfigState.value = await versionSyncManager.getBlogConfig()
   }
   
   // 通知版本状态需要更新
-  const notifyVersionStatusUpdate = () => {
-    const blogConfig = versionSyncManager.getBlogConfig()
+  const notifyVersionStatusUpdate = async () => {
+    console.log('🔧 通知版本状态更新...')
+    
+    // 记录数据修改时间戳
+    lastDataModificationTime.value = Date.now()
+    console.log('🔧 记录数据修改时间戳:', lastDataModificationTime.value)
+    
+    const blogConfig = await versionSyncManager.getBlogConfig()
     if (blogConfig && blogConfig.blogPath) {
-      setVersionStatus('conflict')
+      console.log('🔧 检测到博客配置存在，强制设置版本状态为冲突')
+      
+      // 使用 forceSetVersionStatus 确保状态能够被更新，不受锁定机制影响
+      forceSetVersionStatus('conflict')
+      
+      console.log('🔧 版本状态已强制更新为冲突状态')
+      
+      // 添加额外的调试信息
+      try {
+        const currentCacheVersion = await versionSyncManager.getCurrentCacheVersion()
+        console.log('🔧 当前持久化存储版本标识:', currentCacheVersion)
+        console.log('🔧 配置中记录的版本标识:', blogConfig.cacheVersion)
+        
+        if (currentCacheVersion !== blogConfig.cacheVersion) {
+          console.log('🔧 版本标识不匹配，确认存在未同步的修改')
+        } else {
+          console.log('🔧 版本标识相同，但数据内容可能已变化，需要用户手动检查')
+        }
+      } catch (error) {
+        console.error('🔧 获取版本信息时出错:', error)
+      }
+    } else {
+      console.log('🔧 未配置博客路径，跳过版本状态更新')
     }
   }
   
